@@ -8,7 +8,7 @@ from numpy import power as pow
 debug = False
 
 
-class Kroupa():
+class Kroupa:
     """An piece-wise powerlaw mass function :math`f(x) \\sim x^{-\\alpha}`
     The PDF in normalized to 1.
 
@@ -35,10 +35,10 @@ class Kroupa():
         C = np.zeros(len(a))
 
         # Assure piecewise continuity
-        C[0] = pow(1. / mlim[1], -a[0])  # i=0
-        C[1] = pow(1. / mlim[1], -a[1])  # i=1
+        C[0] = pow(1.0 / mlim[1], -a[0])  # i=0
+        C[1] = pow(1.0 / mlim[1], -a[1])  # i=1
         for i in range(2, len(a)):  # i>1
-            C[i] = pow(1. / mlim[i], -a[i])
+            C[i] = pow(1.0 / mlim[i], -a[i])
             for j in range(1, i):
                 C[i] *= pow((mlim[j + 1] / mlim[j]), -a[j])
 
@@ -46,7 +46,7 @@ class Kroupa():
         for i in range(len(a)):
             area[i] = self._mom0(mlim[i], mlim[i + 1], a[i])
         norm = area * C
-        self._norm = (1. / np.sum(norm))
+        self._norm = 1.0 / np.sum(norm)
         self._area = norm * self._norm
         self._C = C
 
@@ -80,8 +80,11 @@ class Kroupa():
         for i in range(len(a)):
             I.append(norm * C[i] * self._mom0(mlim[i], mlim[i + 1], a[i]))
             I2.append(norm * C[i] * self._mom1(mlim[i], mlim[i + 1], a[i]))
-            print('a={:.2f}, piece=[{:.2f}, {:.2f}], limits=[{:.2f}, {:.2f}]'.
-                  format(a[i], mlim[i], mlim[i + 1], mlim[i], mlim[i + 1]))
+            print(
+                "a={:.2f}, piece=[{:.2f}, {:.2f}], limits=[{:.2f}, {:.2f}]".format(
+                    a[i], mlim[i], mlim[i + 1], mlim[i], mlim[i + 1]
+                )
+            )
         I = np.array(I)
         I2 = np.array(I2) / I
         return (I, I2)
@@ -98,12 +101,14 @@ class Kroupa():
 
         if xmin < mlim[0]:
             raise ValueError(
-                'xmin is less than the lower domain boundary of {:.2f}'.format(
-                    mlim[0]))
+                "xmin is less than the lower domain boundary of {:.2f}".format(mlim[0])
+            )
         if xmax > mlim[-1]:
             raise ValueError(
-                'xmax is larger than the upper domain boundary of {:.2f}'.
-                format(mlim[-1]))
+                "xmax is larger than the upper domain boundary of {:.2f}".format(
+                    mlim[-1]
+                )
+            )
 
         imin = np.where(xmin / mlim >= 1)[0][-1]
         if xmax == mlim[-1]:
@@ -122,8 +127,10 @@ class Kroupa():
                 XMAX = np.min((mlim[i + 1], xmax))
                 if debug == True:
                     print(
-                        'a={:.2f}, piece=[{:.2f}, {:.2f}], limits=[{:.2f}, {:.2f}]'.
-                        format(a[i], mlim[i], mlim[i + 1], XMIN, XMAX))
+                        "a={:.2f}, piece=[{:.2f}, {:.2f}], limits=[{:.2f}, {:.2f}]".format(
+                            a[i], mlim[i], mlim[i + 1], XMIN, XMAX
+                        )
+                    )
                 I += norm * C[i] * self._mom0(XMIN, XMAX, a[i])
                 I2 += norm * C[i] * self._mom1(XMIN, XMAX, a[i])
 
@@ -146,7 +153,7 @@ class Kroupa():
         X = np.random.rand(n)
         mass = np.array([])
         for i in range(len(a)):
-            j = (X >= np.sum(area[0:i])) * (X < np.sum(area[0:i + 1]))
+            j = (X >= np.sum(area[0:i])) * (X < np.sum(area[0 : i + 1]))
             x = np.random.rand(len(X[j]))
             m = self._getmass(x, a[i], mlim[i], mlim[i + 1])
             mass = np.r_[mass, m]
@@ -155,14 +162,14 @@ class Kroupa():
     def _mom0(self, xmin, xmax, a):
         """ First moment """
         if a == 1:
-            return (np.log(xmin) - np.log(xmax))
+            return np.log(xmin) - np.log(xmax)
         else:
             return (pow(xmax, 1.0 - a) - pow(xmin, 1.0 - a)) / (1.0 - a)
 
     def _mom1(self, xmin, xmax, a):
         """ Second moment """
         if a == 0:
-            return (np.log(xmin) - np.log(xmax))
+            return np.log(xmin) - np.log(xmax)
         else:
             return (pow(xmax, 2.0 - a) - pow(xmin, 2.0 - a)) / (2.0 - a)
 
@@ -181,15 +188,14 @@ class Kroupa():
         if slope == 1:
             A = np.log(xmax) - np.log(xmin)
         else:
-            A = (1. /
-                 (1 - slope)) * (pow(xmax, 1. - slope) - pow(xmin, 1 - slope))
-        mass = (1.0 - slope) * x * A + xmin**(1.0 - slope)
+            A = (1.0 / (1 - slope)) * (pow(xmax, 1.0 - slope) - pow(xmin, 1 - slope))
+        mass = (1.0 - slope) * x * A + xmin ** (1.0 - slope)
         Z = 1.0 / (1.0 - slope)
-        mass = mass**Z
+        mass = mass ** Z
         return mass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     from scipy.integrate import quad, quadrature
     from scipy.interpolate import interp1d
@@ -197,22 +203,25 @@ if __name__ == '__main__':
     from sys import argv
 
     a = np.r_[np.zeros(5) + 1.3, np.zeros(10) + 2.3]
-    mlim = np.r_[np.logspace(np.log10(0.08), np.log10(0.5), 6),
-                 np.logspace(np.log10(0.5), np.log10(120), 11)[1:]]
+    mlim = np.r_[
+        np.logspace(np.log10(0.08), np.log10(0.5), 6),
+        np.logspace(np.log10(0.5), np.log10(120), 11)[1:],
+    ]
 
     K = Kroupa(a=a, mlim=mlim)
     mlim = K._mlim
 
     I, I2 = K.pintegral()
-    p.plot(I2, 2e5 * I, 'k-')
+    p.plot(I2, 2e5 * I, "k-")
     p.loglog()
     p.show()
     exit()
 
     eep, m, logT, logL, g, r, i = np.loadtxt(
-        '/home/eb0025/Dropbox/sptools/MIST_iso_5b0533fab00b3.iso.cmd',
+        "/home/eb0025/Dropbox/sptools/MIST_iso_5b0533fab00b3.iso.cmd",
         usecols=(0, 2, 4, 6, 10, 11, 12),
-        unpack=True)
+        unpack=True,
+    )
 
     ilogL = interp1d(m, logL, bounds_error=False)
     ilogT = interp1d(m, logT, bounds_error=False)
@@ -223,8 +232,9 @@ if __name__ == '__main__':
     # Test integration
     for mmin, mmax in zip(m[0:-1], m[1:]):
         I, I2 = K.integral(mmin, mmax)
-        print("{:.4f} {:.4f} {:.4f} {:.4f} {:.4f}".format(
-            mmin, mmax, mmax - mmin, I, I2))
+        print(
+            "{:.4f} {:.4f} {:.4f} {:.4f} {:.4f}".format(mmin, mmax, mmax - mmin, I, I2)
+        )
 
     # Show integration of MF along the isochrone
     p.figure(figsize=(8, 8))
@@ -237,20 +247,20 @@ if __name__ == '__main__':
     I = np.array(I + [I[0]])
 
     p.subplot(121)
-    p.plot(g - r, g, 'k-')
+    p.plot(g - r, g, "k-")
     p.scatter(g - r, g, c=I, s=60, vmin=0, vmax=0.005, zorder=99)
     p.ylim(p.ylim()[::-1])
-    p.xlabel('g-r')
-    p.ylabel('g')
+    p.xlabel("g-r")
+    p.ylabel("g")
 
     p.subplot(122)
-    p.plot(logT, logL, 'k-')
+    p.plot(logT, logL, "k-")
     p.scatter(logT, logL, c=I, s=60, vmin=0, vmax=0.005, zorder=99)
     p.xlim(p.xlim()[::-1])
-    p.xlabel('logT')
-    p.ylabel('logL')
+    p.xlabel("logT")
+    p.ylabel("logL")
 
-    p.savefig("int" + argv[1] + '.png')
+    p.savefig("int" + argv[1] + ".png")
 
     # Show synthetic CMD
     p.figure(figsize=(8, 8))
@@ -267,15 +277,15 @@ if __name__ == '__main__':
     sg += err(sg) * np.random.randn(len(sg))
     sr += err(sr) * np.random.randn(len(sr))
 
-    p.plot(sg - sr, sg, 'k.', ms=1, alpha=0.8)
+    p.plot(sg - sr, sg, "k.", ms=1, alpha=0.8)
     p.ylim(14, -2)
     p.xlim(-1.2, 3)
-    p.savefig("cmd" + argv[1] + '.png')
+    p.savefig("cmd" + argv[1] + ".png")
 
     # Show MF
     p.figure(figsize=(8, 8))
     X = np.linspace(mlim[0], mlim[-1] - 0.01, 10000)
-    Y = K.eval(X, N0=2.e5)
+    Y = K.eval(X, N0=2.0e5)
     print("average mass {:.4f}".format(np.mean(mass)))
     bins = np.linspace(np.log10(mlim[0]), np.log10(mlim[-1]), 100)
     p.hist(
@@ -283,12 +293,13 @@ if __name__ == '__main__':
         bins=bins,
         normed=True,
         log=True,
-        histtype='stepfilled',
-        color='red',
-        alpha=0.5)
+        histtype="stepfilled",
+        color="red",
+        alpha=0.5,
+    )
 
-    p.plot(np.log10(X), X * np.log(10) * Y, 'k-')
-    p.xlabel(r'log(m/M$_{\odot})$')
-    p.ylabel(r'log($\xi$(m))')
-    p.savefig("mf" + argv[1] + '.png')
+    p.plot(np.log10(X), X * np.log(10) * Y, "k-")
+    p.xlabel(r"log(m/M$_{\odot})$")
+    p.ylabel(r"log($\xi$(m))")
+    p.savefig("mf" + argv[1] + ".png")
     p.show()

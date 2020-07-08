@@ -3,13 +3,12 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-import os
 import numpy as np
 import pylab as plt
 from scipy.integrate import ode
 from pylab import sqrt
 
-from df import Kroupa
+
 from ifmr import IFMR, get_data
 
 SMALLNUMBER = 1e-9
@@ -100,28 +99,45 @@ class evolve_mf:
         # Total number of bins for stars and for remnants
         # (Note that we work with an array of 4nbin)
 
-        nb = nbin12[0] + nbin12[1]
+        nb = nbin12[0] + nbin12[1] + nbin12[2]
         self.nbin = nb
 
         # Set array of slopes
-        alpha = np.r_[np.zeros(nbin12[0]) + a12[0], np.zeros(nbin12[1]) + a12[1]]
+        alpha = np.r_[
+            np.zeros(nbin12[0]) + a12[0],
+            np.zeros(nbin12[1]) + a12[1],
+            np.zeros(nbin12[2]) + a12[2],
+        ]
 
         # IMF constants A in: f = A*m**alpha
         A2 = (
             m123[1] ** (a12[1] - a12[0]) * self.Pk(a12[0], 1, m123[0], m123[1])
             + self.Pk(a12[1], 1, m123[1], m123[2])
+            + m123[2] ** (a12[1] - a12[2]) * self.Pk(a12[2], 1, m123[2], m123[3])
         ) ** (-1)
 
         A1 = A2 * m123[1] ** (a12[1] - a12[0])
 
+        A3 = A2 * m123[2] ** (a12[1] - a12[2])
+
         # Needed to compute Nj
-        A = N0 * np.r_[np.zeros(nbin12[0]) + A1, np.zeros(nbin12[1]) + A2]
+        A = (
+            N0
+            * np.r_[
+                np.zeros(nbin12[0]) + A1,
+                np.zeros(nbin12[1]) + A2,
+                np.zeros(nbin12[2]) + A3,
+            ]
+        )
 
         # Set edges, make sure there is 1 value for m1, m2 and m3
         me1 = np.logspace(np.log10(m123[0]), np.log10(m123[1]), nbin12[0] + 1)
 
         me2 = np.logspace(np.log10(m123[1]), np.log10(m123[2]), nbin12[1] + 1)
-        self.me = np.r_[me1, me2[1:]]
+
+        me3 = np.logspace(np.log10(m123[2]), np.log10(m123[3]), nbin12[2] + 1)
+
+        self.me = np.r_[me1, me2[1:], me3[1:]]
 
         m1, m2 = self.me[0:-1], self.me[1:]
 
@@ -159,7 +175,16 @@ class evolve_mf:
         # Main function computing the various derivatives
 
         derivs_sev = self._derivs_sev(t, y)
-        derivs_esc = self._derivs_esc(t, y)
+
+        # Change here to stop divide by zero and to speed up,
+        # only run derivs_esc if Ndot is not zero
+        # Original implementation:
+        # derivs_esc = self._derivs_esc(t, y)
+        # New implementation: (see https://github.com/balbinot/ssptools/issues/3)
+        if self.Ndot < 0:
+            derivs_esc = self._derivs_esc(t, y)
+        else:
+            derivs_esc = np.zeros_like(derivs_sev)
 
         return derivs_sev + derivs_esc
 
@@ -213,6 +238,7 @@ class evolve_mf:
                 frem = 1  # full retention for WD
                 if mrem >= 1.36:
                     frem = self.NS_ret
+                # print('mBH_min:', self.IFMR.mBH_min)
                 if mrem >= self.IFMR.mBH_min:
                     frem = self.BH_ret_int
                 Nj_dot_r[irem] = -dNdt * frem
@@ -254,9 +280,7 @@ class evolve_mf:
 
         if t > self.tms_u[-1]:
             isev = np.where(mes > self.mto(t))[0][0] - 1
-            mto = self.mto(t)
-            if mto > mes[isev]:
-                mes[isev + 1] = mto
+            mes[isev + 1] = self.mto(t)
 
         m1 = mes[0:-1]
         m2 = mes[1:]
@@ -267,6 +291,7 @@ class evolve_mf:
 
         c = (mr < self.md) & (m1 < m2)
         Is = Ns[c] * (1 - md ** (-0.5) * P15[c] / P1[c])
+        # print('IS', Is)
         Ir = Nr[c] * (1 - sqrt(mr[c] / md))
         Jr = Mr[c] * (1 - sqrt(mr[c] / md))
 
@@ -302,14 +327,33 @@ class evolve_mf:
         # Do BH cut, if all BH where created
         if self.compute_tms(self.IFMR.m_min) < t:
             # Get Total BH Mass retained
-            sel = self.me[1:] >= self.IFMR.mBH_min
+            # print('self.compute_tms(self.IFMR.m_min)', self.compute_tms(self.IFMR.m_min))
+            # print('IMFMR.m_min=', self.IFMR.m_min)
+            sel1 = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min]
+            sel_lim = sel1[-1]
+            sel = self.me[:-1] >= sel_lim  # self.IFMR.mBH_min
+            # print('me*****', self.me)
+            # print('self.IFMR.mBH_min', self.IFMR.mBH_min)
+            # print('self.me[:-1]', self.me[:-1][sel])
+            # print('Mr[sel]', Mr[sel])
+            # sel[sel == False][-1] = True
+            # print('Mr[sel]2', Mr[sel])
+            # print('test', sel[sel == False])
+
             MBH = Mr[sel].sum() * (1.0 - self.BH_ret_dyn)
+            # print('sel', sel)
+            # print('MBH', MBH)
             i = nb
-            # Remove BH starting from Heavy to Light
+            # print('**************')
+            # print('nb', nb)
+            # print('Nmin', self.Nmin)
+            # Remove BH starting from Heavy to Ligth
             while MBH != 0:
                 i -= 1
+                # print(i, Nr[i])
                 if Nr[i] < self.Nmin:
                     continue
+                # print('Mr[i], MBH', Mr[i], MBH)
                 if Mr[i] < MBH:
                     MBH -= Mr[i]
                     Mr[i] = 0
@@ -340,7 +384,7 @@ class evolve_mf:
         iout = 0
         for i in range(len(self.t)):
             sol.integrate(self.t[i])
-            print(self.t[i])
+            # print(self.t[i])
 
             if self.t[i] >= self.tout[iout]:
 
@@ -377,48 +421,25 @@ class evolve_mf:
 
 if __name__ == "__main__":
     # Some integration settings
-    Ndot = -20  # per Myr
+    Ndot = 0  # -20  # per Myr
     tcc = 0
-    N = 2.0e5
+    N = 2e5
     NS_ret = 0.1  # inital NS retention
     BH_ret_int = 1.0  # inital BH retention
-    BH_ret_dyn = 0.8  # Dynamical BH retention
-    FeHe = -2.0  # Metallicity
+    BH_ret_dyn = 0.5 / 100  # Dynamical BH retention
+    FeHe = -0.7  # Metallicity
 
-    tout = np.linspace(3e3, 3e3, 1)
-    tout = np.array(
-        [
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            10,
-            25,
-            50,
-            100,
-            250,
-            500,
-            1000,
-            2000,
-            3000,
-            4000,
-            5000,
-            6000,
-            7000,
-            8000,
-            9000,
-        ]
-    )
-    #    tout = np.array([75])
+    # tout = np.linspace(3e3, 3e3, 1)
+    # tout = np.array([
+    #    1, 2, 3, 4, 5, 6, 7, 8, 10, 25, 50, 100, 250, 500, 1000, 2000, 3000,
+    #    4000, 5000, 6000, 7000, 8000, 9000, 12000
+    # ])
+    tout = np.array([0, 10, 50, 1000, 6000, 11000])
     # masses and slopes that define double power-law IMF
-    m123 = [0.1, 0.5, 100]
-    a12 = [-1.3, -2.3]
+    m123 = [0.1, 0.5, 1.0, 100]
+    a12 = [-0.5, -1.35, -2.5]
 
-    nbin = [5, 20]
+    nbin = [5, 5, 20]
     f = evolve_mf(
         m123, a12, nbin, tout, N, Ndot, tcc, NS_ret, BH_ret_int, BH_ret_dyn, FeHe
     )
@@ -428,7 +449,7 @@ if __name__ == "__main__":
 
     if plotmf:
 
-        plt.ion()
+        plt.ioff()
         plt.figure(1, figsize=(8, 8))
         plt.clf()
 
@@ -456,19 +477,21 @@ if __name__ == "__main__":
             plt.plot(f.ms[i][cs], f.Ns[i][cs] / dms[cs], "go-")
             plt.plot(f.mr[i][cr], f.Mr[i][cr] / dmr[cr], "ko-")
 
+            print(f.ms[i][cs])
+            print(f.mto(f.tout[i]))
+
             for j in range(len(f.me)):
                 plt.plot([f.me[j], f.me[j]], [1e-4, 1e9], "k--")
             mto = f.mto(f.tout[i])
             plt.plot([mto, mto], [1e-4, 1e9], "k-")
-
+            plt.savefig("mf_%04d.png" % i)
             plt.show()
             plt.draw
 
             plt.pause(0.05)
-            plt.savefig("mf_%04d.png" % i)
 
     if plotm:
-        plt.ion()
+        plt.ioff()
         plt.clf()
         plt.axes([0.12, 0.12, 0.8, 0.8])
         #        plt.xscale('log')
@@ -494,4 +517,6 @@ if __name__ == "__main__":
         mtot = (Mstot + Mrtot) / (Nstot + Nrtot)
         #        plt.plot(f.tout,Nstot+Nrtot,'bo-')
         plt.plot(f.tout, mtot, "b-")
+        plt.savefig("mvt.png")
+        plt.show()
 #        frac = f.Nstar[-1]/f.Nstar0

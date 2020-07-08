@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import os
 import numpy as np
 
 SMALLNUMBER = 1e-9
-dev = True
+dev = False
 
 if dev:
-    _ROOT = '/home/balbinot/ssptools/ssptools'
+    _ROOT = "/home/balbinot/ssptools/ssptools"
 else:
     _ROOT = os.path.abspath(os.path.dirname(__file__))
 
@@ -20,7 +19,7 @@ def get_data(path):
     """
     Get data from path relative to install dir.
     """
-    return os.path.join(_ROOT, 'data', path)
+    return os.path.join(_ROOT, "data", path)
 
 
 class IFMR:
@@ -121,11 +120,11 @@ if __name__ == "__main__":
         for x in X:
             Y.append(IFM.predict(x))
 
-        plt.plot(X, Y, label='{:.2f}'.format(feh))
+        plt.plot(X, Y, label="{:.2f}".format(feh))
 
     plt.loglog()
-    plt.legend(loc='best')
-    plt.xlabel('M_initial')
-    plt.ylabel('M_final')
+    plt.legend(loc="best")
+    plt.xlabel("M_initial")
+    plt.ylabel("M_final")
 
     plt.show()
