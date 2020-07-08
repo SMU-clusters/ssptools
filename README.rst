@@ -18,6 +18,8 @@ SSPTools
 
 Simple Stellar Population Tools
 
+(This version includes a 3 component mass function for evolve_mf)
+
 
 * Free software: MIT license
 * Documentation: https://ssptools.readthedocs.io.
