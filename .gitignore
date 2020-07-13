@@ -110,3 +110,5 @@ ENV/
 
 #ipynb
 *.ipynb
+
+*.csv
