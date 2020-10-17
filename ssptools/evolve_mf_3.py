@@ -9,7 +9,7 @@ from scipy.integrate import ode
 from pylab import sqrt
 
 
-from ifmr import IFMR, get_data
+from .ifmr import IFMR, get_data
 
 SMALLNUMBER = 1e-9
 dev = True
