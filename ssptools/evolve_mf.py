@@ -310,7 +310,7 @@ class evolve_mf:
             x=v_space,
             y=self.maxwellian(v_space, 265 * (1 - fb)),
             s=0,
-            k=1,
+            k=3,
         )
         retention = kick_spl_loop.integral(0, vesc)
 
