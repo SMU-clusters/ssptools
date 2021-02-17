@@ -382,6 +382,7 @@ class evolve_mf:
             sel1 = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min]
             sel_lim = sel1[-1]
             sel = self.me[:-1] >= sel_lim  # self.IFMR.mBH_min
+            self.mBH_min = sel_lim  # export this to make counting BHs easier
 
             # calculate total mass we want to eject
             MBH = Mr[sel].sum() * (1.0 - self.BH_ret_dyn)
