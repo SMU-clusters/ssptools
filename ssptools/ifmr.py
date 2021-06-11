@@ -68,26 +68,42 @@ class IFMR:
 
         if feh < np.min(bhgrid[:, 0]):
             fback = np.min(bhgrid[:, 0])
-            print("""{:.2f} is out of bounds for the BH metallicity grid,
-                  falling back to minimum of {:.2f}""".format(feh, fback))
+            print(
+                """{:.2f} is out of bounds for the BH metallicity grid,
+                  falling back to minimum of {:.2f}""".format(
+                    feh, fback
+                )
+            )
             self.FeHe_BH = fback
 
         elif feh > np.max(bhgrid[:, 0]):
             fback = np.max(bhgrid[:, 0])
-            print("""{:.2f} is out of bounds for the BH metallicity grid,
-                  falling back to maximum of {:.2f}""".format(feh, fback))
+            print(
+                """{:.2f} is out of bounds for the BH metallicity grid,
+                  falling back to maximum of {:.2f}""".format(
+                    feh, fback
+                )
+            )
             self.FeHe_BH = fback
 
         if feh < np.min(wdgrid[:, 0]):
             fback = np.min(wdgrid[:, 0])
-            print("""{:.2f} is out of bounds for the WD metallicity grid,
-                  falling back to minimum of {:.2f}""".format(feh, fback))
+            print(
+                """{:.2f} is out of bounds for the WD metallicity grid,
+                  falling back to minimum of {:.2f}""".format(
+                    feh, fback
+                )
+            )
             self.FeHe_WD = fback
 
         elif feh > np.max(wdgrid[:, 0]):
             fback = np.max(wdgrid[:, 0])
-            print("""{:.2f} is out of bounds for the WD metallicity grid,
-                  falling back to maximum of {:.2f}""".format(feh, fback))
+            print(
+                """{:.2f} is out of bounds for the WD metallicity grid,
+                  falling back to maximum of {:.2f}""".format(
+                    feh, fback
+                )
+            )
             self.FeHe_WD = fback
 
     def predict(self, m_in):

@@ -12,8 +12,9 @@ def intinfo(a, mmin, mmax, XMIN, XMAX, xmin, xmax, II, II2):
     ostr = """a={:.2f}, mlim=[{:.2f}, {:.2f}],
 Int range=[{:.2f}, {:.2f}],
 Requested range=[{:.2f}, {:.2f}],
-I0={:.6f}, I1={:.6f}\n""".format(a, mmin, mmax, XMIN, XMAX, xmin, xmax, II,
-                                 II2)
+I0={:.6f}, I1={:.6f}\n""".format(
+        a, mmin, mmax, XMIN, XMAX, xmin, xmax, II, II2
+    )
     print(ostr.rstrip("\r"))
 
 
@@ -31,6 +32,7 @@ class Kroupa:
         Object
 
     """
+
     def __init__(self, a=[1.3, 2.35], mlim=[0.08, 0.5, 120.0]):
 
         a = np.array(a)
@@ -85,12 +87,14 @@ class Kroupa:
 
         if xmin < mlim[0]:
             raise ValueError(
-                "xmin is less than the lower domain boundary of {:.2f}".format(
-                    mlim[0]))
+                "xmin is less than the lower domain boundary of {:.2f}".format(mlim[0])
+            )
         if xmax > mlim[-1]:
             raise ValueError(
-                "xmax is larger than the upper domain boundary of {:.2f}".
-                format(mlim[-1]))
+                "xmax is larger than the upper domain boundary of {:.2f}".format(
+                    mlim[-1]
+                )
+            )
 
         imin = np.where(xmin / mlim >= 1)[0][-1]
         if xmax == mlim[-1]:
@@ -105,12 +109,12 @@ class Kroupa:
             I2 = norm * C[imin] * self._mom1(xmin, xmax, a[imin])
             i = imin
             if debug == True:
-                print("part {i} of {j} {imin}, {imax}".format(i=i + 1,
-                                                              j=imax - imin,
-                                                              imin=imin,
-                                                              imax=imax))
-                intinfo(a[i], mlim[i], mlim[i + 1], XMIN, XMAX, xmin, xmax, II,
-                        II2)
+                print(
+                    "part {i} of {j} {imin}, {imax}".format(
+                        i=i + 1, j=imax - imin, imin=imin, imax=imax
+                    )
+                )
+                intinfo(a[i], mlim[i], mlim[i + 1], XMIN, XMAX, xmin, xmax, II, II2)
         else:
             for h, i in enumerate(range(imin, imax)):
                 XMIN = np.max((mlim[i], xmin))
@@ -120,17 +124,16 @@ class Kroupa:
                 I += II
                 I2 += II2
                 if debug == True:
-                    print("part {h} of {j} {imin}, {imax}".format(h=h + 1,
-                                                                  j=imax -
-                                                                  imin,
-                                                                  imin=imin,
-                                                                  imax=imax))
-                    intinfo(a[i], mlim[i], mlim[i + 1], XMIN, XMAX, xmin, xmax,
-                            II, II2)
+                    print(
+                        "part {h} of {j} {imin}, {imax}".format(
+                            h=h + 1, j=imax - imin, imin=imin, imax=imax
+                        )
+                    )
+                    intinfo(a[i], mlim[i], mlim[i + 1], XMIN, XMAX, xmin, xmax, II, II2)
         return (I, I2)
 
     def sample(self, n):
-        """ Sample n stars from the mass function.
+        """Sample n stars from the mass function.
 
         Args:
             n (int): number of points to be sampled
@@ -146,7 +149,7 @@ class Kroupa:
         X = np.random.rand(n)
         mass = np.array([])
         for i in range(len(a)):
-            j = (X >= np.sum(area[0:i])) * (X < np.sum(area[0:i + 1]))
+            j = (X >= np.sum(area[0:i])) * (X < np.sum(area[0 : i + 1]))
             x = np.random.rand(len(X[j]))
             m = self._getmass(x, a[i], mlim[i], mlim[i + 1])
             mass = np.r_[mass, m]
@@ -181,11 +184,10 @@ class Kroupa:
         if slope == 1:
             A = np.log(xmax) - np.log(xmin)
         else:
-            A = (1.0 /
-                 (1 - slope)) * (pow(xmax, 1.0 - slope) - pow(xmin, 1 - slope))
-        mass = (1.0 - slope) * x * A + xmin**(1.0 - slope)
+            A = (1.0 / (1 - slope)) * (pow(xmax, 1.0 - slope) - pow(xmin, 1 - slope))
+        mass = (1.0 - slope) * x * A + xmin ** (1.0 - slope)
         Z = 1.0 / (1.0 - slope)
-        mass = mass**Z
+        mass = mass ** Z
         return mass
 
 
@@ -197,8 +199,10 @@ if __name__ == "__main__":
     from sys import argv
 
     a = np.r_[np.zeros(5) + 1.3, np.zeros(10) + 2.3]
-    mlim = np.r_[np.logspace(np.log10(0.08), np.log10(0.5), 6),
-                 np.logspace(np.log10(0.5), np.log10(120), 11)[1:], ]
+    mlim = np.r_[
+        np.logspace(np.log10(0.08), np.log10(0.5), 6),
+        np.logspace(np.log10(0.5), np.log10(120), 11)[1:],
+    ]
 
     K = Kroupa(a=a, mlim=mlim)
     mlim = K._mlim
@@ -221,8 +225,9 @@ if __name__ == "__main__":
     # Test integration
     for mmin, mmax in zip(m[0:-1], m[1:]):
         I, I2 = K.integral(mmin, mmax)
-        print("{:.8f} {:.8f} {:.8f} {:.8f} {:.8f}".format(
-            mmin, mmax, mmax - mmin, I, I2))
+        print(
+            "{:.8f} {:.8f} {:.8f} {:.8f} {:.8f}".format(mmin, mmax, mmax - mmin, I, I2)
+        )
 
     # Show synthetic CMD
     N = np.int(3.0e5)
