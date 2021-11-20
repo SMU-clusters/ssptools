@@ -1,6 +1,6 @@
 # SSPTools
 
-[![MIT license](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/pjs902/honors-thesis/blob/main/LICENSE)
+[![MIT license](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/pjs902/ssptools/blob/master/LICENSE)
 
 
 Simple Stellar Population Tools
