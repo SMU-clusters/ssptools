@@ -377,7 +377,7 @@ class evolve_mf:
         Mr = y[3 * nb : 4 * nb].copy()
 
         # Do BH cut, if all BH where created
-        if self.compute_tms(self.IFMR.m_min) < t:
+        if self.compute_tms(self.IFMR.BH_m_min) < t:
 
             sel1 = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min]
             sel_lim = sel1[-1]
