@@ -57,7 +57,7 @@ class IFMR:
         self.BH_spline = UnivariateSpline(bh_mi, bh_mf, s=0, k=1)
 
         self.m_min = bh_mi[0]
-        self.mBH_min = self.predict(self.m_min)
+        self.mBH_min = np.min(bh_mf)
 
     def _check_feh_bounds(self):
 
