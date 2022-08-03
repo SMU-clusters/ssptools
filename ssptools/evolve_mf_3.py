@@ -9,7 +9,6 @@ from scipy.integrate import ode
 from scipy.interpolate import UnivariateSpline
 from scipy.interpolate import interp1d
 from pylab import sqrt
-import glob
 
 from .ifmr import IFMR, get_data
 
@@ -95,23 +94,7 @@ class evolve_mf:
         if self.natal_kicks:
             # load in the ifmr data to interpolate fb from mr
 
-            # index the data
-            index = glob.glob(get_data("sse/*"))
-            for i in range(len(index)):
-                # pull out the metallicities
-                index[i] = float(index[i].split("FEH")[-1].split(".dat")[0])
-
-            # get the closest value
-            grid_feh = min(index, key=lambda x: abs(x - self.FeHe))
-
-            # add in '+' if it's positive so we can build the correct path
-            if grid_feh >= 0:
-                grid_feh = "+" + f"{grid_feh:.2f}"
-            else:
-                grid_feh = f"{grid_feh:.2f}"
-
-            # re-build the path
-            feh_path = get_data("sse/") + "MP_FEH" + grid_feh + ".dat"
+            feh_path = get_data(f"sse/MP_FEH{self.IFMR.FeH_BH:+.2f}.dat")
 
             # load in the data
             self.fb_grid = np.loadtxt(feh_path, usecols=(1, 3), unpack=True)
