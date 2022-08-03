@@ -40,7 +40,7 @@ class IFMR:
 
         # Get the closest model
         j = np.argmin(np.abs(self.FeH_WD - wdgrid[:, 0]))
-        self.WD_m_max, WD_coeffs = wdgrid[j, 1], wdgrid[j, 2:]
+        self.wd_m_max, WD_coeffs = wdgrid[j, 1], wdgrid[j, 2:]
 
         self.WD_poly = np.polynomial.Polynomial(WD_coeffs[::-1])
 
@@ -56,8 +56,8 @@ class IFMR:
         # linear to avoid boundary effects near m_A, m_B, etc
         self.BH_spline = UnivariateSpline(bh_mi, bh_mf, s=0, k=1)
 
-        self.BH_m_min = bh_mi[0]
-        self.mBH_min = self.predict(self.BH_m_min)
+        self.m_min = bh_mi[0]
+        self.mBH_min = self.predict(self.m_min)
 
     def _check_feh_bounds(self):
 
@@ -93,9 +93,9 @@ class IFMR:
         """Predict the final mass given the initial mass(es) `m_in`"""
 
         final = np.where(
-            m_in >= self.BH_m_min, self.BH_spline(m_in),
+            m_in >= self.m_min, self.BH_spline(m_in),
             np.where(
-                (self.WD_m_max < m_in) & (m_in <= self.BH_m_min), 1.4,
+                (self.wd_m_max < m_in) & (m_in <= self.m_min), 1.4,
                 self.WD_poly(np.array(m_in))
             )
         )
