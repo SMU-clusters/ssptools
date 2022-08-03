@@ -1,112 +1,110 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import absolute_import, division, unicode_literals
-
-import os
+import pathlib
 import logging
+
 import numpy as np
+from scipy.interpolate import UnivariateSpline
 
-SMALLNUMBER = 1e-9
-dev = False
 
-if dev:
-    _ROOT = "/home/balbinot/ssptools/ssptools"
-else:
-    _ROOT = os.path.abspath(os.path.dirname(__file__))
+_ROOT = pathlib.Path(__file__).parent
 
 
 def get_data(path):
-    """
-    Get data from path relative to install dir.
-    """
-    return os.path.join(_ROOT, "data", path)
+    """Get data from path relative to install dir."""
+    return _ROOT / "data" / path
 
 
 class IFMR:
-    def __init__(self, FeHe):
+
+    def __init__(self, FeH):
         """
-        Provides a class for the initial-final mass of black holes. Uses
-        tabulated values for the polynomial approximations. These are based
-        on SSE models at different metallicities.
+        Provides a class for the initial-final mass of all stellar remnants.
+        These are based on MIST and SSE models at different metallicities.
         """
 
-        bhgrid = np.loadtxt(get_data("sevtables/bhifmr.dat"))
-        wdgrid = np.loadtxt(get_data("sevtables/wdifmr.dat"))
-        self._bhgrid = bhgrid
-        self._wdgrid = wdgrid
-        self.FeHe = FeHe
-        self.FeHe_WD = self.FeHe_BH = self.FeHe
+        # ------------------------------------------------------------------
+        # Check metallicity bounds
+        # ------------------------------------------------------------------
 
-        # Make sure chonse metallicity is withing the valid range or fall back
-        # to best possible value
+        self.FeH = FeH
+
         self._check_feh_bounds()
 
-        # Interpolate coefficients to chosen metallicity
-        BHconstants = []
-        for loop in range(1, len(bhgrid[0])):
-            BHconstants.append(np.interp(FeHe, bhgrid[:, 0], bhgrid[:, loop]))
-        BHconstants = np.array(BHconstants)
+        # ------------------------------------------------------------------
+        # White Dwarfs
+        # ------------------------------------------------------------------
 
-        WDconstants = []
-        # dont interpolate, but get the closest model
-        j = np.argmin(np.abs(self.FeHe_WD - wdgrid[:, 0]))
-        WDconstants = wdgrid[j, :]
+        wdgrid = np.loadtxt(get_data("sevtables/wdifmr.dat"))
 
-        self.m_min, self.B, self.C = BHconstants[:3]
-        self.p1 = np.poly1d(BHconstants[3:5])
-        self.p2 = np.poly1d(BHconstants[5:7])
-        self.p3 = np.poly1d(BHconstants[7:])
+        # Get the closest model
+        j = np.argmin(np.abs(self.FeH_WD - wdgrid[:, 0]))
+        self.wd_m_max, WD_coeffs = wdgrid[j, 1], wdgrid[j, 2:]
+
+        self.WD_poly = np.polynomial.Polynomial(WD_coeffs[::-1])
+
+        # ------------------------------------------------------------------
+        # Black Holes
+        # ------------------------------------------------------------------
+
+        bhifmr = np.loadtxt(get_data(f"sse/MP_FEH{self.FeH_BH:+.2f}.dat"))
+
+        # Grab only stellar type 14
+        bh_mi, bh_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+
+        # linear to avoid boundary effects near m_A, m_B, etc
+        self.BH_spline = UnivariateSpline(bh_mi, bh_mf, s=0, k=1)
+
+        self.m_min = bh_mi[0]
         self.mBH_min = self.predict(self.m_min)
 
-        self.wd_m_max = WDconstants[1]
-        self.p4 = np.poly1d(WDconstants[2:])
-
     def _check_feh_bounds(self):
-        feh = self.FeHe
-        bhgrid = self._bhgrid
-        wdgrid = self._wdgrid
 
         mssg = ("{0:.2f} is out of bounds for the {1} metallicity grid, "
                 "falling back to {2} of {3:.2f}")
 
-        if feh < np.min(bhgrid[:, 0]):
-            fback = np.min(bhgrid[:, 0])
-            logging.debug(mssg.format(feh, 'BH', 'minimum', fback))
-            self.FeHe_BH = fback
+        wdgrid = np.loadtxt(get_data("sevtables/wdifmr.dat"))[:, 0]
 
-        elif feh > np.max(bhgrid[:, 0]):
-            fback = np.max(bhgrid[:, 0])
-            logging.debug(mssg.format(feh, 'BH', 'maximum', fback))
-            self.FeHe_BH = fback
+        if self.FeH < (fback := np.min(wdgrid)):
+            logging.debug(mssg.format(self.FeH, 'WD', 'minimum', fback))
+            self.FeH_WD = fback
 
-        if feh < np.min(wdgrid[:, 0]):
-            fback = np.min(wdgrid[:, 0])
-            logging.debug(mssg.format(feh, 'WD', 'minimum', fback))
-            self.FeHe_WD = fback
+        elif self.FeH > (fback := np.max(wdgrid)):
+            logging.debug(mssg.format(self.FeH, 'WD', 'maximum', fback))
+            self.FeH_WD = fback
+        else:
+            self.FeH_WD = self.FeH
 
-        elif feh > np.max(wdgrid[:, 0]):
-            fback = np.max(wdgrid[:, 0])
-            logging.debug(mssg.format(feh, 'WD', 'maximum', fback))
-            self.FeHe_WD = fback
+        bhgrid = np.array([float(fn.stem.split('FEH')[-1])
+                           for fn in get_data('sse').glob('MP*dat')])
+
+        if self.FeH < (fback := np.min(bhgrid)):
+            logging.debug(mssg.format(self.FeH, 'BH', 'minimum', fback))
+            self.FeH_BH = fback
+
+        elif self.FeH > (fback := np.max(bhgrid)):
+            logging.debug(mssg.format(self.FeH, 'BH', 'maximum', fback))
+            self.FeH_BH = fback
+        else:
+            self.FeH_BH = self.FeH
 
     def predict(self, m_in):
+        """Predict the final mass given the initial mass(es) `m_in`"""
 
-        # BH pieces
-        if m_in >= self.C:
-            return self.p3(m_in)
-        if m_in >= self.B:
-            return self.p2(m_in)
-        if m_in >= self.m_min:
-            return self.p1(m_in)
+        final = np.where(
+            m_in >= self.m_min, self.BH_spline(m_in),
+            np.where(
+                (self.wd_m_max < m_in) & (m_in <= self.m_min), 1.4,
+                self.WD_poly(np.array(m_in))
+            )
+        )
 
-        # NS piece (all NS have the same mass)
-        if m_in <= self.m_min and m_in > self.wd_m_max:
-            return 1.4
+        # if m_in is a single float, reconvert to match
+        if not final.shape:
+            final = float(final)
 
-        # WD piece
-        else:
-            return self.p4(m_in)
+        return final
 
 
 if __name__ == "__main__":
@@ -116,9 +114,7 @@ if __name__ == "__main__":
     X = np.arange(0.8, 100, 0.1)
     for feh in np.arange(-2.5, -0.5, 0.2):
         IFM = IFMR(feh)
-        Y = []
-        for x in X:
-            Y.append(IFM.predict(x))
+        Y = IFM.predict(X)
 
         plt.plot(X, Y, label="{:.2f}".format(feh))
 
