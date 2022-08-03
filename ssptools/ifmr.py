@@ -53,7 +53,8 @@ class IFMR:
         # Grab only stellar type 14
         bh_mi, bh_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
 
-        self.BH_spline = UnivariateSpline(bh_mi, bh_mf, s=0)
+        # linear to avoid boundary effects near m_A, m_B, etc
+        self.BH_spline = UnivariateSpline(bh_mi, bh_mf, s=0, k=1)
 
         self.BH_m_min = bh_mi[0]
         self.mBH_min = self.predict(self.BH_m_min)
