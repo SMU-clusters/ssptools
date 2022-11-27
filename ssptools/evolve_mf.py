@@ -70,7 +70,7 @@ class evolve_mf:
         #   - number of bins in each power-law segment
         #   - 3 boundary masses
         #   - total initial number of stars N0
-        self._set_imf(m123, a12, nbin12, N0)
+        self.set_imf(m123, a12, nbin12, N0)
         mstogrid = np.loadtxt(get_data("sevtables/msto.dat"))
 
         # These constants define t_ms(t), Eduardo will supply an [Fe/H]
@@ -128,34 +128,52 @@ class evolve_mf:
 
     def Pk(self, a, k, m1, m2):
         # Useful function
-        return (m2**(a + k) - m1**(a + k)) / (a + k)
+        return (m2 ** (a + k) - m1 ** (a + k)) / (a + k)
 
     # Set all (initial) mass function constants
     def set_imf(self, m123, a12, nbin12, N0):
         # Total number of bins for stars and for remnants
         # (Note that we work with an array of 4nbin)
 
-        nb = nbin12[0] + nbin12[1]
+        nb = nbin12[0] + nbin12[1] + nbin12[2]
         self.nbin = nb
 
         # Set array of slopes
-        alpha = np.r_[np.zeros(nbin12[0]) + a12[0],
-                      np.zeros(nbin12[1]) + a12[1]]
+        alpha = np.r_[
+            np.zeros(nbin12[0]) + a12[0],
+            np.zeros(nbin12[1]) + a12[1],
+            np.zeros(nbin12[2]) + a12[2],
+        ]
 
         # IMF constants A in: f = A*m**alpha
-        A2 = (m123[1]**(a12[1] - a12[0]) * self.Pk(a12[0], 1, m123[0], m123[1])
-              + self.Pk(a12[1], 1, m123[1], m123[2]))**(-1)
+        A2 = (
+            m123[1] ** (a12[1] - a12[0]) * self.Pk(a12[0], 1, m123[0], m123[1])
+            + self.Pk(a12[1], 1, m123[1], m123[2])
+            + m123[2] ** (a12[1] - a12[2]) * self.Pk(a12[2], 1, m123[2], m123[3])
+        ) ** (-1)
 
-        A1 = A2 * m123[1]**(a12[1] - a12[0])
+        A1 = A2 * m123[1] ** (a12[1] - a12[0])
+
+        A3 = A2 * m123[2] ** (a12[1] - a12[2])
 
         # Needed to compute Nj
-        A = N0 * np.r_[np.zeros(nbin12[0]) + A1, np.zeros(nbin12[1]) + A2]
+        A = (
+            N0
+            * np.r_[
+                np.zeros(nbin12[0]) + A1,
+                np.zeros(nbin12[1]) + A2,
+                np.zeros(nbin12[2]) + A3,
+            ]
+        )
 
         # Set edges, make sure there is 1 value for m1, m2 and m3
         me1 = np.logspace(np.log10(m123[0]), np.log10(m123[1]), nbin12[0] + 1)
 
         me2 = np.logspace(np.log10(m123[1]), np.log10(m123[2]), nbin12[1] + 1)
-        self.me = np.r_[me1, me2[1:]]
+
+        me3 = np.logspace(np.log10(m123[2]), np.log10(m123[3]), nbin12[2] + 1)
+
+        self.me = np.r_[me1, me2[1:], me3[1:]]
 
         m1, m2 = self.me[0:-1], self.me[1:]
 
@@ -174,7 +192,7 @@ class evolve_mf:
     # Functions:
     def compute_tms(self, mi):
         a = self.tms_constants
-        return a[0] * np.exp(a[1] * mi**a[2])
+        return a[0] * np.exp(a[1] * mi ** a[2])
 
     def mto(self, t):
         # Inverse of tms(mi)
@@ -182,7 +200,7 @@ class evolve_mf:
         if t < self.compute_tms(100):
             mto = 100
         else:
-            mto = (np.log(t / a[0]) / a[1])**(1 / a[2])
+            mto = (np.log(t / a[0]) / a[1]) ** (1 / a[2])
         return mto
 
     def ifm(self, m):
@@ -193,7 +211,16 @@ class evolve_mf:
         # Main function computing the various derivatives
 
         derivs_sev = self._derivs_sev(t, y)
-        derivs_esc = self._derivs_esc(t, y)
+
+        # Change here to stop divide by zero and to speed up,
+        # only run derivs_esc if Ndot is not zero
+        # Original implementation:
+        # derivs_esc = self._derivs_esc(t, y)
+        # New implementation: (see https://github.com/balbinot/ssptools/issues/3)
+        if self.Ndot < 0:
+            derivs_esc = self._derivs_esc(t, y)
+        else:
+            derivs_esc = np.zeros_like(derivs_sev)
 
         return derivs_sev + derivs_esc
 
@@ -224,14 +251,15 @@ class evolve_mf:
                 Aj = Nj / self.Pk(alphaj, 1, m1, mto)
 
                 # Get the number of turn-off stars per unit of mass from Aj and alphaj
-                dNdm = Aj * mto**alphaj
+                dNdm = Aj * mto ** alphaj
             else:
                 dNdm = 0
 
-            # Then fine dNdt = dNdm * dmdt
+            # Then find dNdt = dNdm * dmdt
             a = self.tms_constants
-            dmdt = abs((1. / (a[1] * a[2] * t)) * (np.log(t / a[0]) / a[1])**
-                       (1 / a[2] - 1))
+            dmdt = abs(
+                (1.0 / (a[1] * a[2] * t)) * (np.log(t / a[0]) / a[1]) ** (1 / a[2] - 1)
+            )
             dNdt = -dNdm * dmdt
 
             # Define derivatives, note that alphaj remains constant
@@ -246,6 +274,7 @@ class evolve_mf:
                 frem = 1  # full retention for WD
                 if mrem >= 1.36:
                     frem = self.NS_ret
+                # print('mBH_min:', self.IFMR.mBH_min)
                 if mrem >= self.IFMR.mBH_min:
                     frem = self.BH_ret_int
                 Nj_dot_r[irem] = -dNdt * frem
@@ -264,9 +293,9 @@ class evolve_mf:
         Nj_dot_r, Mj_dot_r = np.zeros(nb), np.zeros(nb)
 
         Ns = np.abs(y[0:nb])
-        alphas = y[nb:2 * nb]
-        Nr = np.abs(y[2 * nb:3 * nb])
-        Mr = np.abs(y[3 * nb:4 * nb])
+        alphas = y[nb : 2 * nb]
+        Nr = np.abs(y[2 * nb : 3 * nb])
+        Mr = np.abs(y[3 * nb : 4 * nb])
 
         if t < self.tcc:
             N_sum = Ns.sum() + Nr.sum()
@@ -277,7 +306,7 @@ class evolve_mf:
             return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
         mr = 0.5 * (self.me[1:] + self.me[0:-1])
-        c = (Nr > 0)
+        c = Nr > 0
         mr[c] = Mr[c] / Nr[c]
 
         a1, a15, a2, a25 = alphas + 1, alphas + 1.5, alphas + 2, alphas + 2.5
@@ -287,9 +316,7 @@ class evolve_mf:
 
         if t > self.tms_u[-1]:
             isev = np.where(mes > self.mto(t))[0][0] - 1
-            mto = self.mto(t)
-            if (mto > mes[isev]):
-                mes[isev + 1] = mto
+            mes[isev + 1] = self.mto(t)
 
         m1 = mes[0:-1]
         m2 = mes[1:]
@@ -299,15 +326,17 @@ class evolve_mf:
         As = Ns / P1
 
         c = (mr < self.md) & (m1 < m2)
-        Is = Ns[c] * (1 - md**(-0.5) * P15[c] / P1[c])
-        Ir = Nr[c] * (1 - sqrt(mr[c] / md))
-        Jr = Mr[c] * (1 - sqrt(mr[c] / md))
+        Is = Ns[c] * (1 - md ** (-0.5) * P15[c] / P1[c])
+        # print('IS', Is)
+        Ir = Nr[c] * (1 - np.sqrt(mr[c] / md))
+        Jr = Mr[c] * (1 - np.sqrt(mr[c] / md))
 
         B = Ndot / sum(Is + Ir)
 
         Nj_dot_s[c] += B * Is
-        aj_dot_s[c] += B * (
-            (m1[c] / md)**0.5 - (m2[c] / md)**0.5) / np.log(m2[c] / m1[c])
+        aj_dot_s[c] += (
+            B * ((m1[c] / md) ** 0.5 - (m2[c] / md) ** 0.5) / np.log(m2[c] / m1[c])
+        )
         Nj_dot_r[c] += B * Ir
         Mj_dot_r[c] += B * Jr
 
@@ -338,7 +367,7 @@ class evolve_mf:
         nb = self.nbin
         # Extract total N, M and split in Ns and Ms
         Ns = y[0:nb]
-        alphas = y[nb:2 * nb]
+        alphas = y[nb : 2 * nb]
 
         # Some special treatment to adjust edges to mto
         mes = np.copy(self.me)
@@ -349,17 +378,20 @@ class evolve_mf:
         As = Ns / self.Pk(alphas, 1, mes[0:-1], mes[1:])
         Ms = As * self.Pk(alphas, 2, mes[0:-1], mes[1:])
 
-        Nr = y[2 * nb:3 * nb].copy()
-        Mr = y[3 * nb:4 * nb].copy()
+        Nr = y[2 * nb : 3 * nb].copy()
+        Mr = y[3 * nb : 4 * nb].copy()
 
         # Do BH cut, if all BH where created
         if self.compute_tms(self.IFMR.m_min) < t:
-            # Get Total BH Mass retained
+
             sel1 = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min]
             sel_lim = sel1[-1]
             sel = self.me[:-1] >= sel_lim  # self.IFMR.mBH_min
+            self.mBH_min = sel_lim  # export this to make counting BHs easier
 
-            MBH = Mr[sel].sum() * (1. - self.BH_ret_dyn)
+            # calculate total mass we want to eject
+            MBH = Mr[sel].sum() * (1.0 - self.BH_ret_dyn)
+            # print("total mass we want to eject: " + str(MBH))
 
             natal_ejecta = 0.0
             if self.natal_kicks:
@@ -381,7 +413,9 @@ class evolve_mf:
                         if mr < sel_lim:
                             continue
                         else:
+                            # print("mr = " + str(mr))
                             fb = fb_interp(mr)
+                            # print("fb = " + str(fb))
 
                             if fb == 1.0:
                                 continue
@@ -398,10 +432,13 @@ class evolve_mf:
 
             i = nb
             # Remove BH starting from Heavy to Light
+
             while MBH != 0:
                 i -= 1
+                # print(i, Nr[i])
                 if Nr[i] < self.Nmin:
                     continue
+                # print('Mr[i], MBH', Mr[i], MBH)
                 if Mr[i] < MBH:
                     MBH -= Mr[i]
                     Mr[i] = 0
@@ -426,18 +463,17 @@ class evolve_mf:
         i = 0
 
         sol = ode(self._derivs)
-        sol.set_integrator('dopri5', max_step=1e12, atol=1e-5, rtol=1e-5)
+        sol.set_integrator("dopri5", max_step=1e12, atol=1e-5, rtol=1e-5)
         sol.set_initial_value(y, 0)
 
         iout = 0
         for i in range(len(self.t)):
             sol.integrate(self.t[i])
-            print(self.t[i])
+            # print(self.t[i])
 
             if self.t[i] >= self.tout[iout]:
 
-                Ns, alphas, Ms, Nr, Mr, mes = self.extract_arrays(
-                    self.t[i], sol.y)
+                Ns, alphas, Ms, Nr, Mr, mes = self.extract_arrays(self.t[i], sol.y)
                 if iout == 0:
                     self.Ns = [Ns]
                     self.alphas = [alphas]
@@ -461,7 +497,7 @@ class evolve_mf:
                     self.ms = np.vstack((self.ms, Ms / Ns))
 
                     mr = 0.5 * (self.me[1:] + self.me[0:-1])
-                    c = (Nr > 0)
+                    c = Nr > 0
                     mr[c] = Mr[c] / Nr[c]
                     self.mr = np.vstack((self.mr, mr))
                     self.mes = np.vstack((self.mes, mes))
@@ -469,35 +505,38 @@ class evolve_mf:
 
 
 if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+
     # Some integration settings
-    Ndot = -20  # per Myr
+    Ndot = 0  # -20  # per Myr
     tcc = 0
-    N = 2.e5
+    N = 2e5
     NS_ret = 0.1  # initial NS retention
     BH_ret_int = 1.0  # initial BH retention
-    BH_ret_dyn = 0.8  # Dynamical BH retention
-    FeHe = -2.0  # Metallicity
+    BH_ret_dyn = 0.5 / 100  # Dynamical BH retention
+    FeH = -0.7  # Metallicity
 
-    tout = np.linspace(3e3, 3e3, 1)
-    tout = np.array([
-        1, 2, 3, 4, 5, 6, 7, 8, 10, 25, 50, 100, 250, 500, 1000, 2000, 3000,
-        4000, 5000, 6000, 7000, 8000, 9000
-    ])
-    #    tout = np.array([75])
+    # tout = np.linspace(3e3, 3e3, 1)
+    # tout = np.array([
+    #    1, 2, 3, 4, 5, 6, 7, 8, 10, 25, 50, 100, 250, 500, 1000, 2000, 3000,
+    #    4000, 5000, 6000, 7000, 8000, 9000, 12000
+    # ])
+    tout = np.array([11000])
     # masses and slopes that define double power-law IMF
-    m123 = [0.1, 0.5, 100]
-    a12 = [-1.3, -2.3]
+    m123 = [0.1, 0.5, 1.0, 100]
+    a12 = [-0.5, -1.35, -2.5]
 
-    nbin = [5, 20]
-    f = evolve_mf(m123, a12, nbin, tout, N, Ndot, tcc, NS_ret, BH_ret_int,
-                  BH_ret_dyn, FeHe)
+    nbin = [5, 5, 20]
+    f = evolve_mf(
+        m123, a12, nbin, tout, N, Ndot, tcc, NS_ret, BH_ret_int, BH_ret_dyn, FeH
+    )
 
-    plotmf = 1
-    plotm = 0
+    plotmf = True
+    plotm = False
 
-    if (plotmf):
+    if plotmf:
 
-        plt.ion()
+        plt.ioff()
         plt.figure(1, figsize=(8, 8))
         plt.clf()
 
@@ -508,44 +547,46 @@ if __name__ == "__main__":
             plt.axes([0.13, 0.13, 0.8, 0.8])
             plt.xlim(0.8e-1, 1.3e2)
             plt.ylim(3e-1, 3e7)
-            plt.yscale('log')
-            plt.xscale('log')
+            plt.yscale("log")
+            plt.xscale("log")
 
-            plt.ylabel(r'$dN/dm\,{\rm [M}_\odot^{-1}{\rm ]}$')
-            plt.xlabel(r'$m\,{\rm [M}_\odot{\rm ]}$')
-            plt.title(r'$t = %5i\,{\rm Myr}$' % f.tout[i])
-            plt.tick_params(axis='x', pad=10)
+            plt.ylabel(r"$dN/dm\,{\rm [M}_\odot^{-1}{\rm ]}$")
+            plt.xlabel(r"$m\,{\rm [M}_\odot{\rm ]}$")
+            plt.title(r"$t = %5i\,{\rm Myr}$" % f.tout[i])
+            plt.tick_params(axis="x", pad=10)
             print(" plot ", i, f.tout[i])
-            cs = (f.Ns[i] > 10 * f.Nmin)
-            cr = (f.Nr[i] > 10 * f.Nmin)
+            cs = f.Ns[i] > 10 * f.Nmin
+            cr = f.Nr[i] > 10 * f.Nmin
 
             dms = f.mes[i][1:] - f.mes[i][0:-1]
             dmr = f.me[1:] - f.me[0:-1]
 
-            plt.plot(f.ms[i][cs], f.Ns[i][cs] / dms[cs], 'go-')
-            plt.plot(f.mr[i][cr], f.Mr[i][cr] / dmr[cr], 'ko-')
+            plt.plot(f.ms[i][cs], f.Ns[i][cs] / dms[cs], "go-")
+            plt.plot(f.mr[i][cr], f.Mr[i][cr] / dmr[cr], "ko-")
+
+            print(f.ms[i][cs])
+            print(f.mto(f.tout[i]))
 
             for j in range(len(f.me)):
-                plt.plot([f.me[j], f.me[j]], [1e-4, 1e9], 'k--')
+                plt.plot([f.me[j], f.me[j]], [1e-4, 1e9], "k--")
             mto = f.mto(f.tout[i])
-            plt.plot([mto, mto], [1e-4, 1e9], 'k-')
-
+            plt.plot([mto, mto], [1e-4, 1e9], "k-")
+            plt.savefig("mf_%04d.png" % i)
             plt.show()
             plt.draw
 
             plt.pause(0.05)
-            plt.savefig('mf_%04d.png' % i)
 
-    if (plotm):
-        plt.ion()
+    if plotm:
+        plt.ioff()
         plt.clf()
         plt.axes([0.12, 0.12, 0.8, 0.8])
         #        plt.xscale('log')
         #        plt.yscale('log')
         plt.ylim(0.1, 2)
         #        plt.xlim(2,e4)
-        plt.ylabel(r'$M(t)$')
-        plt.xlabel(r'$t\,{\rm [Myr]}$')
+        plt.ylabel(r"$M(t)$")
+        plt.xlabel(r"$t\,{\rm [Myr]}$")
 
         Nstot = np.zeros(len(f.tout))
         Mstot = np.zeros(len(f.tout))
@@ -562,5 +603,7 @@ if __name__ == "__main__":
 
         mtot = (Mstot + Mrtot) / (Nstot + Nrtot)
         #        plt.plot(f.tout,Nstot+Nrtot,'bo-')
-        plt.plot(f.tout, mtot, 'b-')
+        plt.plot(f.tout, mtot, "b-")
+        plt.savefig("mvt.png")
+        plt.show()
 #        frac = f.Nstar[-1]/f.Nstar0
