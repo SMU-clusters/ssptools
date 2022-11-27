@@ -1,45 +1,82 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import (absolute_import, division, print_function,
-                        unicode_literals)
-
 import numpy as np
-import pylab as plt
 from scipy.integrate import ode
-from scipy.interpolate import UnivariateSpline, interp1d
-from pylab import sqrt
+from scipy.interpolate import interp1d, UnivariateSpline
 
 from .ifmr import IFMR, get_data
 
-SMALLNUMBER = 1e-9
-dev = False
 
 class evolve_mf:
-    r"""
+    r'''
     Class to evolve the stellar mass function, to be included in EMACSS
     For nbin mass bins, the routine solves for an array with length 4nbin, containing:
     y = {N_stars_j, alpha_stars_j, N_remnants_j, M_remnants_j}
 
     based on \dot{y}
 
-    """
+    Parameters
+    ----------
+    m123 : list of float
+        Break-masses (including outer bounds; size N+1)
 
-    def __init__(self, m123, a12, nbin12, tout, N0, Ndot, tcc, NS_ret,
-                 BH_ret_int, BH_ret_dyn, FeHe, natal_kicks=False, vesc=90):
+    a12 : list of float
+        mass function slopes (size N)
+
+    nbin12 : list of int
+        Number of mass bins in each regime (size N)
+
+    N0 : int
+        Total initial number of stars
+
+    tout : list of int
+        Times to output masses at [years]
+
+    Ndot : float
+        Regulates low-mass object depletion due to dynamical evolution
+        [stars / Myr]
+
+    tcc : float
+        Core collapse time
+
+    NS_ret : float
+        Neutron star retention fraction (0 to 1)
+
+    BH_ret_int : float
+        Initial black hole retention fraction (0 to 1)
+
+    BH_ret_dyn : float
+        Dynamical black hole retention fraction (0 to 1)
+
+    FeH : float
+        Metallicity, in solar fraction [Fe/H]
+
+    natal_kicks : bool
+        Whether to account for natal kicks in the BH dynamical retention
+
+    vesc : float
+        Cluster escape velocity, in km/s, for use in the computation of BH
+        natal kick effects
+
+    '''
+
+    def __init__(self, m123, a12, nbin12, tout, N0, Ndot, tcc,
+                 NS_ret, BH_ret_int, BH_ret_dyn,
+                 FeH, natal_kicks=False, vesc=90):
 
         # Initialise the mass bins for double power-law IMF:
         #   - 2 input slopes
         #   - number of bins in each power-law segment
         #   - 3 boundary masses
         #   - total initial number of stars N0
-        self.set_imf(m123, a12, nbin12, N0)
-        mstogrid = np.loadtxt(get_data('sevtables/msto.dat'))
+        self._set_imf(m123, a12, nbin12, N0)
+        mstogrid = np.loadtxt(get_data("sevtables/msto.dat"))
 
         # These constants define t_ms(t), Eduardo will supply an [Fe/H]
         # interpolation
         # old SSE values are self.tms_constants = [0.413, 9.610, -0.350]
-        fehs = np.argmin(np.abs(mstogrid[:, 0] - FeHe))
+        fehs = np.argmin(np.abs(mstogrid[:, 0] - FeH))
         self.tms_constants = mstogrid[fehs, 1:]
 
         # Core collapse time, will be provided by EMACSS, here it can be set
@@ -49,14 +86,14 @@ class evolve_mf:
         self.NS_ret = NS_ret
         self.BH_ret_int = BH_ret_int  # Initial BH retention
         self.BH_ret_dyn = BH_ret_dyn  # Dynamical BH retention
-        self.FeHe = FeHe
-        self.IFMR = IFMR(FeHe)
+        self.FeH = FeH
+        self.IFMR = IFMR(FeH)
 
         # Minimum of stars to call a bin "empty"
         self.Nmin = 1e-1
 
         # Depletion mass: below this mass preferential disruption
-        # Hardcoded for now, perhaps vary, fit on Nbody?
+        # Hardcoded for now, perhaps vary, fit on N-body?
         self.md = 1.2
 
         # Setup sev parameters for each bin
