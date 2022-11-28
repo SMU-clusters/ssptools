@@ -155,21 +155,30 @@ class evolve_mf:
         except ZeroDivisionError:
             return np.log(m2 / m1)
 
-    # Set all (initial) mass function constants
     def _set_imf(self, m_break, a, nbin, N0):
-        # Total number of bins for stars and for remnants
-        # (Note that we work with an array of 4nbin)
+        '''Initialize the mass bins based on the IMF and initial number of stars
 
-        # nb = nbin12[0] + nbin12[1] + nbin12[2]
+        Parameters
+        ----------
+        m_break : list of float
+            Break-masses (including outer bounds; size N+1)
+
+        a : list of float
+            mass function slopes (size N)
+
+        nbin : list of int
+            Number of mass bins in each regime (size N)
+
+        N0 : int
+            Total initial number of stars
+        '''
+
+        # Total number of mass bins
         self.nbin = np.sum(nbin)
 
-        # Set array of slopes
-        # alpha = np.r_[
-        #     np.zeros(nbin12[0]) + a12[0],
-        #     np.zeros(nbin12[1]) + a12[1],
-        #     np.zeros(nbin12[2]) + a12[2],
-        # ]
-        alpha = np.repeat(a, nbin)
+        # ------------------------------------------------------------------
+        # Compute normalization factors A_j
+        # ------------------------------------------------------------------
 
         A3 = (
             self.Pk(a[2], 1, m_break[2], m_break[3])
@@ -182,56 +191,60 @@ class evolve_mf:
         A2 = A3 * m_break[2] ** (a[2] - a[1])
         A1 = A2 * m_break[1] ** (a[1] - a[0])
 
-        # Needed to compute Nj
-        # A = (
-        #     N0
-        #     * np.r_[
-        #         np.zeros(nbin[0]) + A1,
-        #         np.zeros(nbin[1]) + A2,
-        #         np.zeros(nbin[2]) + A3,
-        #     ]
-        # )
         A = N0 * np.repeat([A1, A2, A3], nbin)
 
-        # Set edges, make sure there is 1 value for m1, m2 and m3
+        # ------------------------------------------------------------------
+        # Set mass bin edges
+        # Bins are logspaced evenly between the break masses, with the
+        # number of bins specified by nbin. This spacing is thus *not*
+        # consistent throughtout entire mass range.
+        # ------------------------------------------------------------------
+
         # TODO equal-log-space between bins, would single logspace be better?
         me1 = np.geomspace(m_break[0], m_break[1], nbin[0] + 1)
         me2 = np.geomspace(m_break[1], m_break[2], nbin[1] + 1)
         me3 = np.geomspace(m_break[2], m_break[3], nbin[2] + 1)
 
+        # Combine bin edges, avoiding repetition
         self.me = np.r_[me1, me2[1:], me3[1:]]
 
-        m1, m2 = self.me[0:-1], self.me[1:]
-
-        # Set Nj for stars and remnants
-        self.Ns0 = A * self.Pk(alpha, 1, m1, m2)
-        self.ms0 = A * self.Pk(alpha, 2, m1, m2) / self.Ns0
-        self.alphas0 = alpha
-
-        # Special edges for stars because stellar evolution affects this
+        # Set special edges for stars because stellar evolution affects this
         self.mes0 = np.copy(self.me)
 
+        # ------------------------------------------------------------------
+        # Set the initial Nj and mj for all bins (stars and remnants)
+        # ------------------------------------------------------------------
+
+        # Expand array of IMF slopes to all mass bins
+        alpha = np.repeat(a, nbin)
+        self.alphas0 = alpha
+
+        # Set initial star bins based on IMF
+        self.Ns0 = A * self.Pk(alpha, 1, self.me[0:-1], self.me[1:])
+        self.ms0 = A * self.Pk(alpha, 2, self.me[0:-1], self.me[1:]) / self.Ns0
+
+        # Set all initial remnant bins to zero
         self.Nr0 = np.zeros(self.nbin)
         self.Mr0 = np.zeros(self.nbin)
         self.mr0 = np.zeros(self.nbin)
 
-    # Functions:
     def compute_tms(self, mi):
+        '''Compute main-sequence lifetime for a given mass `mi`'''
         a = self._tms_constants
         return a[0] * np.exp(a[1] * mi ** a[2])
 
-    def mto(self, t):
-        # Inverse of tms(mi)
+    def compute_mto(self, t):
+        '''Compute the turn-off mass for a given time `t` (inverse of tms)'''
         a = self._tms_constants
+
+        # TODO why is this hard limit applied? if necessary, shouldnt recompute
         if t < self.compute_tms(100):
             mto = 100
+
         else:
             mto = (np.log(t / a[0]) / a[1]) ** (1 / a[2])
-        return mto
 
-    def ifm(self, m):
-        """ Initial final mass relation for WD, NS & BH """
-        return self.IFMR.predict(m)
+        return mto
 
     def _derivs(self, t, y):
         # Main function computing the various derivatives
@@ -265,7 +278,7 @@ class evolve_mf:
 
             # bin edges of turn-off bin
             m1 = self.me[isev]
-            mto = self.mto(t)
+            mto = self.compute_mto(t)
             Nj = y[isev]
 
             # Avoid "hitting" the bin edge
@@ -292,7 +305,7 @@ class evolve_mf:
             Nj_dot_s[isev] = dNdt
 
             # Find remnant mass and which bin they go
-            mrem = self.ifm(mto)
+            mrem = self.IFMR.predict(mto)
 
             # Skip 0 mass remnants
             if mrem > 0:
@@ -341,8 +354,8 @@ class evolve_mf:
         mes = np.copy(self.me)
 
         if t > self.tms_u[-1]:
-            isev = np.where(mes > self.mto(t))[0][0] - 1
-            mes[isev + 1] = self.mto(t)
+            isev = np.where(mes > self.compute_mto(t))[0][0] - 1
+            mes[isev + 1] = self.compute_mto(t)
 
         m1 = mes[0:-1]
         m2 = mes[1:]
@@ -398,8 +411,8 @@ class evolve_mf:
         # Some special treatment to adjust edges to mto
         mes = np.copy(self.me)
         if t > self.tms_u[-1]:
-            isev = np.where(self.me > self.mto(t))[0][0] - 1
-            mes[isev + 1] = self.mto(t)
+            isev = np.where(self.me > self.compute_mto(t))[0][0] - 1
+            mes[isev + 1] = self.compute_mto(t)
 
         As = Ns / self.Pk(alphas, 1, mes[0:-1], mes[1:])
         Ms = As * self.Pk(alphas, 2, mes[0:-1], mes[1:])
