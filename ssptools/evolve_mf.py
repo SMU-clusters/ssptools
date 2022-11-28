@@ -70,7 +70,7 @@ class evolve_mf:
         #   - number of bins in each power-law segment
         #   - 3 boundary masses
         #   - total initial number of stars N0
-        self.set_imf(m123, a12, nbin12, N0)
+        self._set_imf(m123, a12, nbin12, N0)
         mstogrid = np.loadtxt(get_data("sevtables/msto.dat"))
 
         # These constants define t_ms(t), Eduardo will supply an [Fe/H]
@@ -131,47 +131,48 @@ class evolve_mf:
         return (m2 ** (a + k) - m1 ** (a + k)) / (a + k)
 
     # Set all (initial) mass function constants
-    def set_imf(self, m123, a12, nbin12, N0):
+    def _set_imf(self, m_break, a, nbin, N0):
         # Total number of bins for stars and for remnants
         # (Note that we work with an array of 4nbin)
 
-        nb = nbin12[0] + nbin12[1] + nbin12[2]
-        self.nbin = nb
+        # nb = nbin12[0] + nbin12[1] + nbin12[2]
+        self.nbin = np.sum(nbin)
 
         # Set array of slopes
-        alpha = np.r_[
-            np.zeros(nbin12[0]) + a12[0],
-            np.zeros(nbin12[1]) + a12[1],
-            np.zeros(nbin12[2]) + a12[2],
-        ]
+        # alpha = np.r_[
+        #     np.zeros(nbin12[0]) + a12[0],
+        #     np.zeros(nbin12[1]) + a12[1],
+        #     np.zeros(nbin12[2]) + a12[2],
+        # ]
+        alpha = np.repeat(a, nbin)
 
-        # IMF constants A in: f = A*m**alpha
-        A2 = (
-            m123[1] ** (a12[1] - a12[0]) * self.Pk(a12[0], 1, m123[0], m123[1])
-            + self.Pk(a12[1], 1, m123[1], m123[2])
-            + m123[2] ** (a12[1] - a12[2]) * self.Pk(a12[2], 1, m123[2], m123[3])
+        A3 = (
+            self.Pk(a[2], 1, m_break[2], m_break[3])
+            + (m_break[1] ** (a[1] - a[0])
+               * self.Pk(a[0], 1, m_break[0], m_break[1]))
+            + (m_break[2] ** (a[2] - a[1])
+               * self.Pk(a[1], 1, m_break[1], m_break[2]))
         ) ** (-1)
 
-        A1 = A2 * m123[1] ** (a12[1] - a12[0])
-
-        A3 = A2 * m123[2] ** (a12[1] - a12[2])
+        A2 = A3 * m_break[2] ** (a[2] - a[1])
+        A1 = A2 * m_break[1] ** (a[1] - a[0])
 
         # Needed to compute Nj
-        A = (
-            N0
-            * np.r_[
-                np.zeros(nbin12[0]) + A1,
-                np.zeros(nbin12[1]) + A2,
-                np.zeros(nbin12[2]) + A3,
-            ]
-        )
+        # A = (
+        #     N0
+        #     * np.r_[
+        #         np.zeros(nbin[0]) + A1,
+        #         np.zeros(nbin[1]) + A2,
+        #         np.zeros(nbin[2]) + A3,
+        #     ]
+        # )
+        A = N0 * np.repeat([A1, A2, A3], nbin)
 
         # Set edges, make sure there is 1 value for m1, m2 and m3
-        me1 = np.logspace(np.log10(m123[0]), np.log10(m123[1]), nbin12[0] + 1)
-
-        me2 = np.logspace(np.log10(m123[1]), np.log10(m123[2]), nbin12[1] + 1)
-
-        me3 = np.logspace(np.log10(m123[2]), np.log10(m123[3]), nbin12[2] + 1)
+        # TODO equal-log-space between bins, would single logspace be better?
+        me1 = np.geomspace(m_break[0], m_break[1], nbin[0] + 1)
+        me2 = np.geomspace(m_break[1], m_break[2], nbin[1] + 1)
+        me3 = np.geomspace(m_break[2], m_break[3], nbin[2] + 1)
 
         self.me = np.r_[me1, me2[1:], me3[1:]]
 
@@ -179,15 +180,15 @@ class evolve_mf:
 
         # Set Nj for stars and remnants
         self.Ns0 = A * self.Pk(alpha, 1, m1, m2)
-        self.alphas0 = alpha
         self.ms0 = A * self.Pk(alpha, 2, m1, m2) / self.Ns0
+        self.alphas0 = alpha
 
         # Special edges for stars because stellar evolution affects this
         self.mes0 = np.copy(self.me)
 
-        self.Nr0 = np.zeros(nb)
-        self.Mr0 = np.zeros(nb)
-        self.mr0 = np.zeros(nb)
+        self.Nr0 = np.zeros(self.nbin)
+        self.Mr0 = np.zeros(self.nbin)
+        self.mr0 = np.zeros(self.nbin)
 
     # Functions:
     def compute_tms(self, mi):
