@@ -247,95 +247,143 @@ class evolve_mf:
         return mto
 
     def _derivs(self, t, y):
-        # Main function computing the various derivatives
+        '''Main function for computing derivatives relevant to mass evolution
 
+        Simply calls the two constituent mass evolution derivative methods;
+        `_derivs_esc` and `_derivs_sev`. Designed to be solved using an ODE
+        integrator, such as `scipy.integrate.ode`.
+
+        Parameters
+        ----------
+        t : float
+            Time step to compute derivatives at
+
+        y : list of array
+            Equation system solution y. Size-4 array containing the arrays,
+            for each mass bin, of the number of stars `Ns`, the mass function
+            slopes `alpha`, the number of remnants `Nr` and the total bin mass
+            of remnants `Mr`
+
+        Returns
+        -------
+        list of array
+            Time derivatives of each of the four quantities described by `y`
+        '''
+
+        # Iterate step count
+        self.nstep += 1
+
+        # Compute stellar evolution derivatives
         derivs_sev = self._derivs_sev(t, y)
 
-        # Change here to stop divide by zero and to speed up,
-        # only run derivs_esc if Ndot is not zero
-        # Original implementation:
-        # derivs_esc = self._derivs_esc(t, y)
-        # New implementation: (see https://github.com/balbinot/ssptools/issues/3)
+        # Only run the dynamical star losses `derivs_esc` if Ndot is not zero
+        # TODO add initial check that Ndot is not > 0
         if self.Ndot < 0:
             derivs_esc = self._derivs_esc(t, y)
         else:
             derivs_esc = np.zeros_like(derivs_sev)
 
+        # Combine mass loss derivatives
         return derivs_sev + derivs_esc
 
     def _derivs_sev(self, t, y):
-        self.nstep += 1
+        '''Derivatives relevant to mass changes due to stellar evolution'''
 
-        nb = self.nbin
-        Nj_dot_s, Nj_dot_r = np.zeros(nb), np.zeros(nb)
-        Mj_dot_r = np.zeros(nb)
+        # Setup derivative bins
+        Nj_dot_s, Nj_dot_r = np.zeros(self.nbin), np.zeros(self.nbin)
+        Mj_dot_r = np.zeros(self.nbin)
+        aj_dot_s = np.zeros(self.nbin)
 
-        # Apply only to bins affected by stellar evolution
+        # Apply only to bins affected by stellar evolution at this time
         if t > self.tms_u[-1]:
 
-            # Find out which bin we are
+            # Find out which mass bin is the current turn-off bin
             isev = np.where(t > self.tms_u)[0][0]
 
-            # bin edges of turn-off bin
+            # Find bin edges of turn-off bin
             m1 = self.me[isev]
             mto = self.compute_mto(t)
             Nj = y[isev]
 
             # Avoid "hitting" the bin edge
             if mto > m1 and Nj > self.Nmin:
-                # Two parameters defining the bin
-                alphaj = y[nb + isev]
 
-                # The constant
+                # Two parameters defining the bin
+                alphaj = y[self.nbin + isev]
+
+                # The normalization constant
                 Aj = Nj / self.Pk(alphaj, 1, m1, mto)
 
-                # Get the number of turn-off stars per unit of mass from Aj and alphaj
+                # Get the number of turn-off stars per unit of mass
                 dNdm = Aj * mto ** alphaj
+
             else:
                 dNdm = 0
 
-            # Then find dNdt = dNdm * dmdt
+            # Compute the full dN/dt = dN/dm * dm/dt
             a = self._tms_constants
-            dmdt = abs(
-                (1.0 / (a[1] * a[2] * t)) * (np.log(t / a[0]) / a[1]) ** (1 / a[2] - 1)
-            )
+            dmdt = abs((1.0 / (a[1] * a[2] * t))
+                       * (np.log(t / a[0]) / a[1]) ** (1 / a[2] - 1))
+
             dNdt = -dNdm * dmdt
 
-            # Define derivatives, note that alphaj remains constant
+            # Fill in star derivatives (alphaj remains constant for _derivs_sev)
             Nj_dot_s[isev] = dNdt
 
-            # Find remnant mass and which bin they go
+            # Find remnant mass and which bin they go into
             mrem = self.IFMR.predict(mto)
 
-            # Skip 0 mass remnants
+            # Skip 0-mass remnants
             if mrem > 0:
+
                 irem = np.where(mrem > self.me)[0][-1]
-                frem = 1  # full retention for WD
-                if mrem >= 1.36:
-                    frem = self.NS_ret
-                # print('mBH_min:', self.IFMR.mBH_min)
-                if mrem >= self.IFMR.mBH_min:
+
+                # frem = 1  # full retention for WD
+
+                # if mrem >= 1.36:
+                #     frem = self.NS_ret
+
+                # if mrem >= self.IFMR.mBH_min:
+                #     frem = self.BH_ret_int
+
+                # Compute Remnant retention fractions based on remnant type
+                # TODO maybe make predict return type directly to skip this
+                if mto < self.IFMR.wd_m_max:
+                    # White Dwarf retention (always 100%)
+                    frem = 1.
+
+                elif mrem >= self.IFMR.mBH_min:
+                    # Black Hole initial retention
                     frem = self.BH_ret_int
+
+                else:
+                    # Neutron Star retention
+                    frem = self.NS_ret
+
+                # Fill in remnant derivatives
                 Nj_dot_r[irem] = -dNdt * frem
                 Mj_dot_r[irem] = -mrem * dNdt * frem
 
-        self.niter += 1
-
-        return np.r_[Nj_dot_s, np.zeros(nb), Nj_dot_r, Mj_dot_r]
+        return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
     def _derivs_esc(self, t, y):
+        '''Derivatives relevant to mass loss due to escaping low-mass stars'''
+
         nb = self.nbin
         md = self.md
         Ndot = self.Ndot
 
+        # Setup derivative bins
         Nj_dot_s, aj_dot_s = np.zeros(nb), np.zeros(nb)
         Nj_dot_r, Mj_dot_r = np.zeros(nb), np.zeros(nb)
 
+        # Pull out individual arrays from y
         Ns = np.abs(y[0:nb])
-        alphas = y[nb : 2 * nb]
-        Nr = np.abs(y[2 * nb : 3 * nb])
-        Mr = np.abs(y[3 * nb : 4 * nb])
+        alphas = y[nb:2 * nb]
+        Nr = np.abs(y[2 * nb:3 * nb])
+        Mr = np.abs(y[3 * nb:4 * nb])
 
+        # If core collapsed, use different, simpler, algorithm
         if t < self.tcc:
             N_sum = Ns.sum() + Nr.sum()
             Nj_dot_s += Ndot * Ns / N_sum
@@ -344,49 +392,51 @@ class evolve_mf:
             Mj_dot_r[sel] += (Ndot * Nr[sel] / N_sum) * (Mr[sel] / Nr[sel])
             return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
+        # Determine mass of remnants
         mr = 0.5 * (self.me[1:] + self.me[0:-1])
         c = Nr > 0
         mr[c] = Mr[c] / Nr[c]
 
-        a1, a15, a2, a25 = alphas + 1, alphas + 1.5, alphas + 2, alphas + 2.5
-
         # Setup edges for stars accounting for mto
         mes = np.copy(self.me)
 
+        # Set all bins above current turn-off to this mto
         if t > self.tms_u[-1]:
-            isev = np.where(mes > self.compute_mto(t))[0][0] - 1
-            mes[isev + 1] = self.compute_mto(t)
+            isev = np.where(mes > self.compute_mto(t))[0][0]
+            mes[isev] = self.compute_mto(t)
 
+        # Helper mass and normalization quantities
         m1 = mes[0:-1]
         m2 = mes[1:]
 
         P1 = self.Pk(alphas, 1, m1, m2)
         P15 = self.Pk(alphas, 1.5, m1, m2)
-        As = Ns / P1
 
+        # Compute relevant rate-of-change integrals I_j, J_j
         c = (mr < self.md) & (m1 < m2)
+
         Is = Ns[c] * (1 - md ** (-0.5) * P15[c] / P1[c])
-        # print('IS', Is)
         Ir = Nr[c] * (1 - np.sqrt(mr[c] / md))
         Jr = Mr[c] * (1 - np.sqrt(mr[c] / md))
 
+        # Compute normalization constant B
         B = Ndot / sum(Is + Ir)
 
+        # Compute rates of change for all four quantities (cumulative per bin)
         Nj_dot_s[c] += B * Is
-        aj_dot_s[c] += (
-            B * ((m1[c] / md) ** 0.5 - (m2[c] / md) ** 0.5) / np.log(m2[c] / m1[c])
-        )
+        aj_dot_s[c] += (B * ((m1[c] / md) ** 0.5 - (m2[c] / md) ** 0.5)
+                        / np.log(m2[c] / m1[c]))
         Nj_dot_r[c] += B * Ir
         Mj_dot_r[c] += B * Jr
 
         return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
-    def maxwellian(self, x, a):
-        norm = np.sqrt(2 / np.pi)
-        exponent = (x ** 2) * np.exp((-1 * (x ** 2)) / (2 * (a ** 2)))
-        return norm * exponent / a ** 3
-
     def get_retention(self, fb, vesc):
+
+        def _maxwellian(x, a):
+            norm = np.sqrt(2 / np.pi)
+            exponent = (x ** 2) * np.exp((-1 * (x ** 2)) / (2 * (a ** 2)))
+            return norm * exponent / a ** 3
 
         if fb == 1.0:
             return 1.0
@@ -394,7 +444,7 @@ class evolve_mf:
         v_space = np.linspace(0, 1000, 1000)
         kick_spl_loop = UnivariateSpline(
             x=v_space,
-            y=self.maxwellian(v_space, 265 * (1 - fb)),
+            y=_maxwellian(v_space, 265 * (1 - fb)),
             s=0,
             k=3,
         )
@@ -493,8 +543,6 @@ class evolve_mf:
     def evolve(self):
         nb = self.nbin
 
-        self.niter = 0
-
         # Initialise ODE solver
         y = np.r_[self.Ns0, self.alphas0, self.Nr0, self.Mr0]
 
@@ -541,108 +589,3 @@ class evolve_mf:
                     self.mr = np.vstack((self.mr, mr))
                     self.mes = np.vstack((self.mes, mes))
                 iout += 1
-
-
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-
-    # Some integration settings
-    Ndot = 0  # -20  # per Myr
-    tcc = 0
-    N = 2e5
-    NS_ret = 0.1  # initial NS retention
-    BH_ret_int = 1.0  # initial BH retention
-    BH_ret_dyn = 0.5 / 100  # Dynamical BH retention
-    FeH = -0.7  # Metallicity
-
-    # tout = np.linspace(3e3, 3e3, 1)
-    # tout = np.array([
-    #    1, 2, 3, 4, 5, 6, 7, 8, 10, 25, 50, 100, 250, 500, 1000, 2000, 3000,
-    #    4000, 5000, 6000, 7000, 8000, 9000, 12000
-    # ])
-    tout = np.array([11000])
-    # masses and slopes that define double power-law IMF
-    m123 = [0.1, 0.5, 1.0, 100]
-    a12 = [-0.5, -1.35, -2.5]
-
-    nbin = [5, 5, 20]
-    f = evolve_mf(
-        m123, a12, nbin, tout, N, Ndot, tcc, NS_ret, BH_ret_int, BH_ret_dyn, FeH
-    )
-
-    plotmf = True
-    plotm = False
-
-    if plotmf:
-
-        plt.ioff()
-        plt.figure(1, figsize=(8, 8))
-        plt.clf()
-
-        print(" Nsteps = ", f.nstep)
-        print(" Start plotting ...")
-        for i in range(len(f.tout)):
-            plt.clf()
-            plt.axes([0.13, 0.13, 0.8, 0.8])
-            plt.xlim(0.8e-1, 1.3e2)
-            plt.ylim(3e-1, 3e7)
-            plt.yscale("log")
-            plt.xscale("log")
-
-            plt.ylabel(r"$dN/dm\,{\rm [M}_\odot^{-1}{\rm ]}$")
-            plt.xlabel(r"$m\,{\rm [M}_\odot{\rm ]}$")
-            plt.title(r"$t = %5i\,{\rm Myr}$" % f.tout[i])
-            plt.tick_params(axis="x", pad=10)
-            print(" plot ", i, f.tout[i])
-            cs = f.Ns[i] > 10 * f.Nmin
-            cr = f.Nr[i] > 10 * f.Nmin
-
-            dms = f.mes[i][1:] - f.mes[i][0:-1]
-            dmr = f.me[1:] - f.me[0:-1]
-
-            plt.plot(f.ms[i][cs], f.Ns[i][cs] / dms[cs], "go-")
-            plt.plot(f.mr[i][cr], f.Mr[i][cr] / dmr[cr], "ko-")
-
-            print(f.ms[i][cs])
-            print(f.mto(f.tout[i]))
-
-            for j in range(len(f.me)):
-                plt.plot([f.me[j], f.me[j]], [1e-4, 1e9], "k--")
-            mto = f.mto(f.tout[i])
-            plt.plot([mto, mto], [1e-4, 1e9], "k-")
-            plt.savefig("mf_%04d.png" % i)
-            plt.show()
-            plt.draw
-
-            plt.pause(0.05)
-
-    if plotm:
-        plt.ioff()
-        plt.clf()
-        plt.axes([0.12, 0.12, 0.8, 0.8])
-        #        plt.xscale('log')
-        #        plt.yscale('log')
-        plt.ylim(0.1, 2)
-        #        plt.xlim(2,e4)
-        plt.ylabel(r"$M(t)$")
-        plt.xlabel(r"$t\,{\rm [Myr]}$")
-
-        Nstot = np.zeros(len(f.tout))
-        Mstot = np.zeros(len(f.tout))
-
-        Nrtot = np.zeros(len(f.tout))
-        Mrtot = np.zeros(len(f.tout))
-
-        for i in range(len(f.tout)):
-            Nstot[i] = sum(f.Ns[i])
-            Mstot[i] = sum(f.Ms[i])
-
-            Nrtot[i] = sum(f.Nr[i])
-            Mrtot[i] = sum(f.Mr[i])
-
-        mtot = (Mstot + Mrtot) / (Nstot + Nrtot)
-        #        plt.plot(f.tout,Nstot+Nrtot,'bo-')
-        plt.plot(f.tout, mtot, "b-")
-        plt.savefig("mvt.png")
-        plt.show()
-#        frac = f.Nstar[-1]/f.Nstar0
