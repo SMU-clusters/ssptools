@@ -64,7 +64,7 @@ class evolve_mf:
 
     def __init__(self, m123, a12, nbin12, tout, N0, Ndot, tcc,
                  NS_ret, BH_ret_int, BH_ret_dyn,
-                 FeH, natal_kicks=False, vesc=90):
+                 FeH, natal_kicks=False, vesc=90, include_t0=False):
 
         # ------------------------------------------------------------------
         # Initialise the mass bins given the power-law IMF slopes and bins
@@ -141,7 +141,7 @@ class evolve_mf:
         # Initialize iteration counter
         self.nstep = 0
 
-        self.evolve()
+        self.evolve(include_t0=include_t0)
 
     def Pk(self, a, k, m1, m2):
         '''Useful function
@@ -221,7 +221,8 @@ class evolve_mf:
 
         # Set initial star bins based on IMF
         self.Ns0 = A * self.Pk(alpha, 1, self.me[0:-1], self.me[1:])
-        self.ms0 = A * self.Pk(alpha, 2, self.me[0:-1], self.me[1:]) / self.Ns0
+        self.Ms0 = A * self.Pk(alpha, 2, self.me[0:-1], self.me[1:])
+        self.ms0 = self.Ms0 / self.Ns0
 
         # Set all initial remnant bins to zero
         self.Nr0 = np.zeros(self.nbin)
@@ -432,6 +433,12 @@ class evolve_mf:
         return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
     def get_retention(self, fb, vesc):
+        '''Compute BH natal-kick retention fraction
+
+        ..math::
+
+        based on fallback fraction and escape velocity
+        '''
 
         def _maxwellian(x, a):
             norm = np.sqrt(2 / np.pi)
@@ -441,14 +448,16 @@ class evolve_mf:
         if fb == 1.0:
             return 1.0
 
-        v_space = np.linspace(0, 1000, 1000)
-        kick_spl_loop = UnivariateSpline(
+        # Integrate over the Maxwellian up to the escape velocity
+        v_space = np.linspace(0, 1000, 1001)
+
+        # TODO might be a quicker way to numerically integrate than a spline
+        retention = UnivariateSpline(
             x=v_space,
             y=_maxwellian(v_space, 265 * (1 - fb)),
             s=0,
             k=3,
-        )
-        retention = kick_spl_loop.integral(0, vesc)
+        ).integral(0, vesc)
 
         return retention
 
@@ -456,7 +465,7 @@ class evolve_mf:
         nb = self.nbin
         # Extract total N, M and split in Ns and Ms
         Ns = y[0:nb]
-        alphas = y[nb : 2 * nb]
+        alphas = y[nb:2 * nb]
 
         # Some special treatment to adjust edges to mto
         mes = np.copy(self.me)
@@ -467,8 +476,8 @@ class evolve_mf:
         As = Ns / self.Pk(alphas, 1, mes[0:-1], mes[1:])
         Ms = As * self.Pk(alphas, 2, mes[0:-1], mes[1:])
 
-        Nr = y[2 * nb : 3 * nb].copy()
-        Mr = y[3 * nb : 4 * nb].copy()
+        Nr = y[2 * nb:3 * nb].copy()
+        Mr = y[3 * nb:4 * nb].copy()
 
         # Do BH cut, if all BH where created
         if self.compute_tms(self.IFMR.m_min) < t:
@@ -540,52 +549,77 @@ class evolve_mf:
 
         return Ns, alphas, Ms, Nr, Mr, mes
 
-    def evolve(self):
-        nb = self.nbin
+    def evolve(self, *, include_t0=False):
 
+        # ------------------------------------------------------------------
+        # Initialize output arrays
+        # ------------------------------------------------------------------
+
+        self.alphas = self.alphas0
+
+        self.Ns, self.Ms, self.ms = self.Ns0, self.Ms0, self.ms0
+
+        self.Nr, self.Mr, self.mr = self.Nr0, self.Mr0, self.mr0
+
+        self.mes = self.mes0
+
+        # ------------------------------------------------------------------
         # Initialise ODE solver
-        y = np.r_[self.Ns0, self.alphas0, self.Nr0, self.Mr0]
+        # ------------------------------------------------------------------
 
-        # Evolve
-        i = 0
+        t0 = 0.0
+        y = np.r_[self.Ns0, self.alphas0, self.Nr0, self.Mr0]
 
         sol = ode(self._derivs)
         sol.set_integrator("dopri5", max_step=1e12, atol=1e-5, rtol=1e-5)
-        sol.set_initial_value(y, 0)
+        sol.set_initial_value(y, t=t0)
 
-        iout = 0
-        for i in range(len(self.t)):
-            sol.integrate(self.t[i])
-            # print(self.t[i])
+        # ------------------------------------------------------------------
+        # Evolve
+        # ------------------------------------------------------------------
 
-            if self.t[i] >= self.tout[iout]:
+        for ti in self.t:
 
-                Ns, alphas, Ms, Nr, Mr, mes = self.extract_arrays(self.t[i], sol.y)
-                if iout == 0:
-                    self.Ns = [Ns]
-                    self.alphas = [alphas]
-                    self.Ms = [Ms]
+            # --------------------------------------------------------------
+            # Integrate ODE solver
+            # --------------------------------------------------------------
 
-                    self.Nr = [Nr]
-                    self.Mr = [Mr]
+            sol.integrate(ti)
 
-                    self.ms = [Ms / Ns]
-                    self.mr = np.copy(self.ms)  # avoid /0
-                    self.mes = [mes]
+            # --------------------------------------------------------------
+            # if this time is in the desired output times extract solutions
+            # --------------------------------------------------------------
 
-                else:
-                    self.Ns = np.vstack((self.Ns, Ns))
-                    self.alphas = np.vstack((self.alphas, alphas))
-                    self.Ms = np.vstack((self.Ms, Ms))
+            if ti in self.tout:
 
-                    self.Nr = np.vstack((self.Nr, Nr))
-                    self.Mr = np.vstack((self.Mr, Mr))
+                # Extract values
+                Ns, alphas, Ms, Nr, Mr, mes = self.extract_arrays(ti, sol.y)
 
-                    self.ms = np.vstack((self.ms, Ms / Ns))
+                # Stack values onto output arrays
+                self.alphas = np.stack((self.alphas, alphas), axis=0)
 
-                    mr = 0.5 * (self.me[1:] + self.me[0:-1])
-                    c = Nr > 0
-                    mr[c] = Mr[c] / Nr[c]
-                    self.mr = np.vstack((self.mr, mr))
-                    self.mes = np.vstack((self.mes, mes))
-                iout += 1
+                self.Ns = np.stack((self.Ns, Ns), axis=0)
+                self.Ms = np.stack((self.Ms, Ms), axis=0)
+                self.ms = np.stack((self.ms, Ms / Ns), axis=0)
+
+                self.Nr = np.stack((self.Nr, Nr), axis=0)
+                self.Mr = np.stack((self.Mr, Mr), axis=0)
+                mr = 0.5 * (self.me[1:] + self.me[0:-1])
+                mr[Nr > 0] = Mr[Nr > 0] / Nr[Nr > 0]
+                self.mr = np.stack((self.mr, mr), axis=0)
+
+                self.mes = np.stack((self.mes, mes), axis=0)
+
+        # ------------------------------------------------------------------
+        # If desired, remove the initial 0th bin (probably not in `tout`)
+        # ------------------------------------------------------------------
+
+        if not include_t0:
+
+            self.alphas = self.alphas[1:]
+
+            self.Ns, self.Ms, self.ms = self.Ns[1:], self.Ms[1:], self.ms[1:]
+
+            self.Nr, self.Mr, self.mr = self.Nr[1:], self.Mr[1:], self.mr[1:]
+
+            self.mes = self.mes[1:]
