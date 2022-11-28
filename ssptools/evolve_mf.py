@@ -127,8 +127,16 @@ class evolve_mf:
         return None
 
     def Pk(self, a, k, m1, m2):
-        # Useful function
-        return (m2 ** (a + k) - m1 ** (a + k)) / (a + k)
+        '''Useful function
+
+        ..math ::
+
+        '''
+        try:
+            return (m2 ** (a + k) - m1 ** (a + k)) / (a + k)
+
+        except ZeroDivisionError:
+            return np.log(m2 / m1)
 
     # Set all (initial) mass function constants
     def _set_imf(self, m_break, a, nbin, N0):
