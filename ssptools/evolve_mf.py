@@ -11,7 +11,8 @@ from .ifmr import IFMR, get_data
 class evolve_mf:
     r'''
     Class to evolve the stellar mass function, to be included in EMACSS
-    For nbin mass bins, the routine solves for an array with length 4nbin, containing:
+    For nbin mass bins, the routine solves for an array with length 4nbin,
+    containing:
     y = {N_stars_j, alpha_stars_j, N_remnants_j, M_remnants_j}
 
     based on \dot{y}
@@ -65,66 +66,82 @@ class evolve_mf:
                  NS_ret, BH_ret_int, BH_ret_dyn,
                  FeH, natal_kicks=False, vesc=90):
 
-        # Initialise the mass bins for double power-law IMF:
-        #   - 2 input slopes
-        #   - number of bins in each power-law segment
-        #   - 3 boundary masses
-        #   - total initial number of stars N0
+        # ------------------------------------------------------------------
+        # Initialise the mass bins given the power-law IMF slopes and bins
+        # ------------------------------------------------------------------
+
         self._set_imf(m123, a12, nbin12, N0)
-        mstogrid = np.loadtxt(get_data("sevtables/msto.dat"))
 
-        # These constants define t_ms(t), Eduardo will supply an [Fe/H]
-        # interpolation
-        # old SSE values are self.tms_constants = [0.413, 9.610, -0.350]
-        fehs = np.argmin(np.abs(mstogrid[:, 0] - FeH))
-        self.tms_constants = mstogrid[fehs, 1:]
+        # ------------------------------------------------------------------
+        # Set various other parameters
+        # ------------------------------------------------------------------
 
-        # Core collapse time, will be provided by EMACSS, here it can be set
-        # manually
+        # Supplied parameters
         self.tcc = tcc
+        self.tout = tout
         self.Ndot = Ndot
         self.NS_ret = NS_ret
-        self.BH_ret_int = BH_ret_int  # Initial BH retention
-        self.BH_ret_dyn = BH_ret_dyn  # Dynamical BH retention
+        self.BH_ret_int = BH_ret_int
+        self.BH_ret_dyn = BH_ret_dyn
         self.FeH = FeH
+
+        # Initial-Final mass relations
         self.IFMR = IFMR(FeH)
 
         # Minimum of stars to call a bin "empty"
-        self.Nmin = 1e-1
+        self.Nmin = 0.1
 
-        # Depletion mass: below this mass preferential disruption
+        # Depletion mass: stars below this mass are preferentially disrupted
         # Hardcoded for now, perhaps vary, fit on N-body?
         self.md = 1.2
 
-        # Setup sev parameters for each bin
+        # ------------------------------------------------------------------
+        # Setup lifetime approximations and compute t_ms of all bin edges
+        # ------------------------------------------------------------------
+
+        # Load a_i coefficients derived from interpolated Dartmouth models
+        mstogrid = np.loadtxt(get_data("sevtables/msto.dat"))
+        nearest_FeH = np.argmin(np.abs(mstogrid[:, 0] - FeH))
+        self._tms_constants = mstogrid[nearest_FeH, 1:]
+
+        # Compute t_ms for all bin edges
         self.tms_l = self.compute_tms(self.me[:-1])
         self.tms_u = self.compute_tms(self.me[1:])
 
-        # Set output times based on sev bin edges, makes sure final one is tend
-        tend = max(tout)
-        self.tout = tout
-
+        # ------------------------------------------------------------------
         # Generate times for integrator
-        self.t = np.sort(np.r_[self.tms_u[self.tms_u < tend], self.tout])
-        self.nt = len(self.t)
+        # ------------------------------------------------------------------
 
-        self.nstep = 0  # counts number of function evaluations
+        t_end = np.max(tout)
 
-        # Setup for natal kicks
+        # Compute each time a new bin evolves out of MS, up till t_end
+        self.t = np.sort(np.r_[self.tms_u[self.tms_u < t_end], self.tout])
+
+        self.nt = self.t.size
+
+        # ------------------------------------------------------------------
+        # Setup BH natal kicks
+        # ------------------------------------------------------------------
+
         self.vesc = vesc
         self.natal_kicks = natal_kicks
-        if self.natal_kicks:
-            # load in the ifmr data to interpolate fb from mr
 
+        if self.natal_kicks:
+
+            # load in the ifmr data to interpolate fb from mr
             feh_path = get_data(f"sse/MP_FEH{self.IFMR.FeH_BH:+.2f}.dat")
 
             # load in the data
             self.fb_grid = np.loadtxt(feh_path, usecols=(1, 3), unpack=True)
 
-        # GO!
-        self.evolve(tend)
+        # ------------------------------------------------------------------
+        # Finally, evolve the population
+        # ------------------------------------------------------------------
 
-        return None
+        # Initialize iteration counter
+        self.nstep = 0
+
+        self.evolve()
 
     def Pk(self, a, k, m1, m2):
         '''Useful function
@@ -200,12 +217,12 @@ class evolve_mf:
 
     # Functions:
     def compute_tms(self, mi):
-        a = self.tms_constants
+        a = self._tms_constants
         return a[0] * np.exp(a[1] * mi ** a[2])
 
     def mto(self, t):
         # Inverse of tms(mi)
-        a = self.tms_constants
+        a = self._tms_constants
         if t < self.compute_tms(100):
             mto = 100
         else:
@@ -265,7 +282,7 @@ class evolve_mf:
                 dNdm = 0
 
             # Then find dNdt = dNdm * dmdt
-            a = self.tms_constants
+            a = self._tms_constants
             dmdt = abs(
                 (1.0 / (a[1] * a[2] * t)) * (np.log(t / a[0]) / a[1]) ** (1 / a[2] - 1)
             )
@@ -460,7 +477,7 @@ class evolve_mf:
 
         return Ns, alphas, Ms, Nr, Mr, mes
 
-    def evolve(self, tend):
+    def evolve(self):
         nb = self.nbin
 
         self.niter = 0
