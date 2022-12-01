@@ -528,26 +528,50 @@ class evolve_mf:
             # adjust by the amount we've already ejected
             MBH -= natal_ejecta
 
-            i = nb
-            # Remove BH starting from Heavy to Light
-
-            while MBH != 0:
-                i -= 1
-                # print(i, Nr[i])
-                if Nr[i] < self.Nmin:
-                    continue
-                # print('Mr[i], MBH', Mr[i], MBH)
-                if Mr[i] < MBH:
-                    MBH -= Mr[i]
-                    Mr[i] = 0
-                    Nr[i] = 0
-                    continue
-                mmr = Mr[i] / Nr[i]
-                Mr[i] -= MBH
-                Nr[i] -= MBH / mmr
-                MBH = 0
+            Mr, Nr = self._eject_BH_dyn(Mr, Nr, M_eject=MBH)
 
         return Ns, alphas, Ms, Nr, Mr, mes
+
+    def _eject_BH_dyn(self, Mr, Nr, *, M_eject=None):
+        '''Determine and remove an amount of BHs from the final BH mass bins
+
+        M_eject is amount of total mass to remove. If not given, compute based
+        on `BH_ret_dyn`.
+        '''
+
+        # Identify BH bins
+        # TODO need a better way for identiyfing remnants all over the place
+        BH_cut = self.me[:-1] >= self.mBH_min
+
+        # calculate total mass we want to eject
+        if M_eject is None:
+            M_eject = Mr[BH_cut].sum() * (1.0 - self.BH_ret_dyn)
+
+        i = self.nbin
+        # Remove BH starting from Heavy to Light
+
+        while M_eject != 0:
+            i -= 1
+
+            # Skip empty bins
+            if Nr[i] < self.Nmin:
+                continue
+
+            # Removed entirety of this bin
+            if Mr[i] < M_eject:
+                M_eject -= Mr[i]
+                Mr[i] = 0
+                Nr[i] = 0
+                continue
+
+            # Remove required fraction of the last affected bin
+            else:
+                Mr[i] -= M_eject
+                Nr[i] -= M_eject / (Mr[i] / Nr[i])
+                break
+
+        return Mr, Nr
+
 
     def evolve(self, *, include_t0=False):
 
