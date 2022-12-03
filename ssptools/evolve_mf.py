@@ -64,7 +64,7 @@ class evolve_mf:
 
     def __init__(self, m123, a12, nbin12, tout, N0, Ndot, tcc,
                  NS_ret, BH_ret_int, BH_ret_dyn,
-                 FeH, natal_kicks=False, vesc=90, include_t0=False):
+                 FeH, natal_kicks=False, vesc=90):
 
         # ------------------------------------------------------------------
         # Initialise the mass bins given the power-law IMF slopes and bins
@@ -141,7 +141,7 @@ class evolve_mf:
         # Initialize iteration counter
         self.nstep = 0
 
-        self.evolve(include_t0=include_t0)
+        self.evolve()
 
     def Pk(self, a, k, m1, m2):
         '''Useful function
@@ -572,20 +572,28 @@ class evolve_mf:
 
         return Mr, Nr
 
-
-    def evolve(self, *, include_t0=False):
+    def evolve(self):
 
         # ------------------------------------------------------------------
         # Initialize output arrays
         # ------------------------------------------------------------------
 
-        self.alphas = self.alphas0
+        # self.alphas = self.alphas0
+        self.alphas = np.empty((len(self.tout), self.nbin))
 
-        self.Ns, self.Ms, self.ms = self.Ns0, self.Ms0, self.ms0
+        # self.Ns, self.Ms, self.ms = self.Ns0, self.Ms0, self.ms0
+        # self.Nr, self.Mr, self.mr = self.Nr0, self.Mr0, self.mr0
 
-        self.Nr, self.Mr, self.mr = self.Nr0, self.Mr0, self.mr0
+        self.Ns = np.empty((len(self.tout), self.nbin))
+        self.Ms = np.empty((len(self.tout), self.nbin))
+        self.ms = np.empty((len(self.tout), self.nbin))
 
-        self.mes = self.mes0
+        self.Nr = np.empty((len(self.tout), self.nbin))
+        self.Mr = np.empty((len(self.tout), self.nbin))
+        self.mr = np.empty((len(self.tout), self.nbin))
+
+        # self.mes = self.mes0
+        self.mes = np.empty((len(self.tout), self.nbin))
 
         # ------------------------------------------------------------------
         # Initialise ODE solver
@@ -616,34 +624,26 @@ class evolve_mf:
 
             if ti in self.tout:
 
+                iout = self.tout.index(ti)
+
                 # Extract values
                 Ns, alphas, Ms, Nr, Mr, mes = self.extract_arrays(ti, sol.y)
 
-                # Stack values onto output arrays
-                self.alphas = np.stack((self.alphas, alphas), axis=0)
+                # save values into output arrays
+                self.alphas[iout, :] = alphas
 
-                self.Ns = np.stack((self.Ns, Ns), axis=0)
-                self.Ms = np.stack((self.Ms, Ms), axis=0)
-                self.ms = np.stack((self.ms, Ms / Ns), axis=0)
+                # Stars
+                self.Ns[iout, :] = Ns
+                self.Ms[iout, :] = Ms
 
-                self.Nr = np.stack((self.Nr, Nr), axis=0)
-                self.Mr = np.stack((self.Mr, Mr), axis=0)
+                self.ms[iout, :] = Ms / Ns
+
+                # Remnants
+                self.Nr[iout, :] = Nr
+                self.Mr[iout, :] = Mr
+
                 mr = 0.5 * (self.me[1:] + self.me[0:-1])
                 mr[Nr > 0] = Mr[Nr > 0] / Nr[Nr > 0]
-                self.mr = np.stack((self.mr, mr), axis=0)
+                self.mr[iout, :] = mr
 
-                self.mes = np.stack((self.mes, mes), axis=0)
-
-        # ------------------------------------------------------------------
-        # If desired, remove the initial 0th bin (probably not in `tout`)
-        # ------------------------------------------------------------------
-
-        if not include_t0:
-
-            self.alphas = self.alphas[1:]
-
-            self.Ns, self.Ms, self.ms = self.Ns[1:], self.Ms[1:], self.ms[1:]
-
-            self.Nr, self.Mr, self.mr = self.Nr[1:], self.Mr[1:], self.mr[1:]
-
-            self.mes = self.mes[1:]
+                self.mes[iout, :] = mes
