@@ -461,13 +461,25 @@ class evolve_mf:
 
         return retention
 
-    def extract_arrays(self, t, y):
+    def _extract_arrays(self, t, y):
+        '''Extract the masses and numbers from the ODE solution at time `t`
+
+        Extracts the relevant arrays from the solutions, accounts for the
+        turn-off mass in the mass bin edges, and ejects all BHs through
+        dynamical and natal-kick means
+        '''
+
+        # ------------------------------------------------------------------
+        # Extract the N, M and alphas for stars and remnants
+        # ------------------------------------------------------------------
+
         nb = self.nbin
-        # Extract total N, M and split in Ns and Ms
+
+        # Extract stars
         Ns = y[0:nb]
         alphas = y[nb:2 * nb]
 
-        # Some special treatment to adjust edges to mto
+        # Some special treatment to adjust current turn-off bin edge
         mes = np.copy(self.me)
         if t > self.tms_u[-1]:
             isev = np.where(self.me > self.compute_mto(t))[0][0] - 1
@@ -476,12 +488,18 @@ class evolve_mf:
         As = Ns / self.Pk(alphas, 1, mes[0:-1], mes[1:])
         Ms = As * self.Pk(alphas, 2, mes[0:-1], mes[1:])
 
+        # Extract remnants (copies due to below ejections)
         Nr = y[2 * nb:3 * nb].copy()
         Mr = y[3 * nb:4 * nb].copy()
 
-        # Do BH cut, if all BH where created
-        if self.compute_tms(self.IFMR.m_min) < t:
+        # ------------------------------------------------------------------
+        # Eject BHs, first through natal kicks, then dynamically
+        # ------------------------------------------------------------------
 
+        # Check if any BH have been created
+        if t > self.compute_tms(self.IFMR.m_min):
+
+            # Get `mBH_min` bin edge (me) from IFMR `mBH_min` (mr)
             sel1 = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min]
             sel_lim = sel1[-1]
             sel = self.me[:-1] >= sel_lim  # self.IFMR.mBH_min
@@ -489,10 +507,12 @@ class evolve_mf:
 
             # calculate total mass we want to eject
             MBH = Mr[sel].sum() * (1.0 - self.BH_ret_dyn)
-            # print("total mass we want to eject: " + str(MBH))
 
-            natal_ejecta = 0.0
             if self.natal_kicks:
+
+                natal_ejecta = 0.0
+
+                # Interpolate the mr-fb grid
                 fb_interp = interp1d(
                     self.fb_grid[0],
                     self.fb_grid[1],
@@ -500,34 +520,45 @@ class evolve_mf:
                     bounds_error=False,
                     fill_value=(0.0, 1.0),
                 )
-                for i in range(len(Mr)):
-                    # skip the bin if its empty
+
+                for i in range(nb):
+
+                    # Skip the bin if its empty
                     if Nr[i] < self.Nmin:
                         continue
+
                     else:
-                        # get the mean mass
+
+                        # Get the mean mass
                         mr = Mr[i] / Nr[i]
-                        # only eject the BHs
+
+                        # Only eject the BHs
                         if mr < sel_lim:
                             continue
+
                         else:
-                            # print("mr = " + str(mr))
+
                             fb = fb_interp(mr)
-                            # print("fb = " + str(fb))
 
                             if fb == 1.0:
                                 continue
+
                             else:
+
+                                # Compute retention fraction
                                 retention = self.get_retention(fb, self.vesc)
+
                                 # keep track of how much we eject
                                 natal_ejecta += Mr[i] * (1 - retention)
+
                                 # eject the mass
                                 Mr[i] *= retention
                                 Nr[i] *= retention
 
-            # adjust by the amount we've already ejected
-            MBH -= natal_ejecta
+                # adjust by the amount we've already ejected
+                MBH -= natal_ejecta
 
+            # Remove dynamical BH ejections
             Mr, Nr = self._eject_BH_dyn(Mr, Nr, M_eject=MBH)
 
         return Ns, alphas, Ms, Nr, Mr, mes
@@ -540,7 +571,7 @@ class evolve_mf:
         '''
 
         # Identify BH bins
-        # TODO need a better way for identiyfing remnants all over the place
+        # TODO need a better way for identifying remnants all over the place
         BH_cut = self.me[:-1] >= self.mBH_min
 
         # calculate total mass we want to eject
@@ -627,7 +658,7 @@ class evolve_mf:
                 iout = self.tout.index(ti)
 
                 # Extract values
-                Ns, alphas, Ms, Nr, Mr, mes = self.extract_arrays(ti, sol.y)
+                Ns, alphas, Ms, Nr, Mr, mes = self._extract_arrays(ti, sol.y)
 
                 # save values into output arrays
                 self.alphas[iout, :] = alphas
