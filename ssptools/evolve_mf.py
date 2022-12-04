@@ -624,7 +624,7 @@ class evolve_mf:
         self.mr = np.empty((len(self.tout), self.nbin))
 
         # self.mes = self.mes0
-        self.mes = np.empty((len(self.tout), self.nbin))
+        self.mes = np.empty((len(self.tout), self.nbin + 1))
 
         # ------------------------------------------------------------------
         # Initialise ODE solver
