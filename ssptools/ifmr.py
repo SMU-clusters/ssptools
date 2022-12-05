@@ -42,7 +42,7 @@ class IFMR:
         j = np.argmin(np.abs(self.FeH_WD - wdgrid[:, 0]))
         WD_m_max, WD_coeffs = wdgrid[j, 1], wdgrid[j, 2:]
 
-        self.WD_spline = np.polynomial.Polynomial(WD_coeffs[::-1])
+        self._WD_spline = np.polynomial.Polynomial(WD_coeffs[::-1])
 
         self.WD_mi = (0.0, WD_m_max)
 
@@ -56,7 +56,7 @@ class IFMR:
         BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
 
         # linear spline to avoid boundary effects near m_A, m_B, etc
-        self.BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1)
+        self._BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1)
 
         self.BH_mi = (BH_mi[0], BH_mi[-1])
 
@@ -127,10 +127,10 @@ class IFMR:
         '''Predict the final mass given the initial mass(es) `m_in`'''
 
         final = np.where(
-            m_in >= self.BH_mi[0], self.BH_spline(m_in),
+            m_in >= self.BH_mi[0], self._BH_spline(m_in),
             np.where(
                 (self.WD_mi[1] < m_in) & (m_in <= self.BH_mi[0]), 1.4,
-                self.WD_spline(np.array(m_in))
+                self._WD_spline(np.array(m_in))
             )
         )
 
