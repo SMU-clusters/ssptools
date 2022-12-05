@@ -134,6 +134,12 @@ class IFMR:
             )
         )
 
+        # If outside boundaries of the IFMR, warn user
+        if np.any(m_in > self.BH_mi[1]):
+            mssg = ("input mass exceeds BH IFMR grid, resulting mass is "
+                    "extrapolated and may be incorrect")
+            logging.warning(mssg)
+
         # if m_in is a single float, reconvert to match
         if not final.shape:
             final = float(final)
