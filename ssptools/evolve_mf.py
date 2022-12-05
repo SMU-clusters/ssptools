@@ -332,38 +332,28 @@ class evolve_mf:
             Nj_dot_s[isev] = dNdt
 
             # Find remnant mass and which bin they go into
-            mrem = self.IFMR.predict(mto)
+            m_rem, cls_rem = self.IFMR.predict(mto), self.IFMR.predict_type(mto)
 
             # Skip 0-mass remnants
-            if mrem > 0:
+            if m_rem > 0:
 
-                irem = np.where(mrem > self.me)[0][-1]
-
-                # frem = 1  # full retention for WD
-
-                # if mrem >= 1.36:
-                #     frem = self.NS_ret
-
-                # if mrem >= self.IFMR.mBH_min:
-                #     frem = self.BH_ret_int
+                irem = np.where(m_rem > self.me)[0][-1]
 
                 # Compute Remnant retention fractions based on remnant type
-                # TODO maybe make predict return type directly to skip this
-                if mto < self.IFMR.wd_m_max:
-                    # White Dwarf retention (always 100%)
+
+                if cls_rem == 'WD':
                     frem = 1.
 
-                elif mrem >= self.IFMR.mBH_min:
-                    # Black Hole initial retention
+                elif cls_rem == 'BH':
                     frem = self.BH_ret_int
 
+                # elif cls_rem == 'NS':
                 else:
-                    # Neutron Star retention
                     frem = self.NS_ret
 
                 # Fill in remnant derivatives
                 Nj_dot_r[irem] = -dNdt * frem
-                Mj_dot_r[irem] = -mrem * dNdt * frem
+                Mj_dot_r[irem] = -m_rem * dNdt * frem
 
         return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
@@ -497,7 +487,7 @@ class evolve_mf:
         # ------------------------------------------------------------------
 
         # Check if any BH have been created
-        if t > self.compute_tms(self.IFMR.m_min):
+        if t > self.compute_tms(self.IFMR.BH_mi[0]):
 
             # Get `mBH_min` bin edge (me) from IFMR `mBH_min` (mr)
             sel1 = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min]
