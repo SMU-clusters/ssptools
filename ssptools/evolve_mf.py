@@ -295,7 +295,7 @@ class evolve_mf:
         Mj_dot_r = np.zeros(self.nbin)
         aj_dot_s = np.zeros(self.nbin)
 
-        # Apply only to bins affected by stellar evolution at this time
+        # Apply only if this time is atleast later than the earliest tms
         if t > self.tms_u[-1]:
 
             # Find out which mass bin is the current turn-off bin
@@ -307,6 +307,7 @@ class evolve_mf:
             Nj = y[isev]
 
             # Avoid "hitting" the bin edge
+            # i.e. when evolving with tout: mto > m1, otherwise: mto == m1
             if mto > m1 and Nj > self.Nmin:
 
                 # Two parameters defining the bin
@@ -422,7 +423,7 @@ class evolve_mf:
 
         return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
-    def get_retention(self, fb, vesc):
+    def _get_retention_frac(self, fb, vesc):
         '''Compute BH natal-kick retention fraction
 
         ..math::
@@ -483,115 +484,117 @@ class evolve_mf:
         Mr = y[3 * nb:4 * nb].copy()
 
         # ------------------------------------------------------------------
+        # Determine types of remnants/stars in each bin
+        # ------------------------------------------------------------------
+
+        rem_types = np.full(nb, 'NS')
+        rem_types[self.me[:-1] < self.IFMR.mWD_max] = 'WD'
+
+        # Special handling to also include the bin containing mBH_min
+        cutoff = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min][-1]
+        rem_types[self.me[:-1] >= cutoff] = 'BH'
+
+        # ------------------------------------------------------------------
         # Eject BHs, first through natal kicks, then dynamically
         # ------------------------------------------------------------------
 
         # Check if any BH have been created
         if t > self.compute_tms(self.IFMR.BH_mi[0]):
 
-            # Get `mBH_min` bin edge (me) from IFMR `mBH_min` (mr)
-            sel1 = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min]
-            sel_lim = sel1[-1]
-            sel = self.me[:-1] >= sel_lim  # self.IFMR.mBH_min
-            self.mBH_min = sel_lim  # export this to make counting BHs easier
+            # not a copy: directly modified by ejection functions
+            Mr_BH, Nr_BH = Mr[rem_types == 'BH'], Nr[rem_types == 'BH']
 
             # calculate total mass we want to eject
-            MBH = Mr[sel].sum() * (1.0 - self.BH_ret_dyn)
+            M_eject = Mr_BH.sum() * (1.0 - self.BH_ret_dyn)
 
+            # First remove mass from all bins through natal kicks, if desired
             if self.natal_kicks:
-
-                natal_ejecta = 0.0
-
-                # Interpolate the mr-fb grid
-                fb_interp = interp1d(
-                    self.fb_grid[0],
-                    self.fb_grid[1],
-                    kind="linear",
-                    bounds_error=False,
-                    fill_value=(0.0, 1.0),
-                )
-
-                for i in range(nb):
-
-                    # Skip the bin if its empty
-                    if Nr[i] < self.Nmin:
-                        continue
-
-                    else:
-
-                        # Get the mean mass
-                        mr = Mr[i] / Nr[i]
-
-                        # Only eject the BHs
-                        if mr < sel_lim:
-                            continue
-
-                        else:
-
-                            fb = fb_interp(mr)
-
-                            if fb == 1.0:
-                                continue
-
-                            else:
-
-                                # Compute retention fraction
-                                retention = self.get_retention(fb, self.vesc)
-
-                                # keep track of how much we eject
-                                natal_ejecta += Mr[i] * (1 - retention)
-
-                                # eject the mass
-                                Mr[i] *= retention
-                                Nr[i] *= retention
-
-                # adjust by the amount we've already ejected
-                MBH -= natal_ejecta
+                Mr_BH, Nr_BH, M_kicked = self._eject_BH_natal(Mr_BH, Nr_BH)
+                M_eject -= M_kicked
 
             # Remove dynamical BH ejections
-            Mr, Nr = self._eject_BH_dyn(Mr, Nr, M_eject=MBH)
+            Mr_BH, Nr_BH = self._eject_BH_dyn(Mr_BH, Nr_BH, M_eject=M_eject)
 
         return Ns, alphas, Ms, Nr, Mr, mes
 
-    def _eject_BH_dyn(self, Mr, Nr, *, M_eject=None):
+    def _eject_BH_natal(self, Mr_BH, Nr_BH):
+
+        natal_ejecta = 0.0
+
+        # Interpolate the mr-fb grid
+        fb_interp = interp1d(
+            self.fb_grid[0],
+            self.fb_grid[1],
+            kind="linear",
+            bounds_error=False,
+            fill_value=(0.0, 1.0),
+        )
+
+        for j in range(Mr_BH.size):
+
+            # Skip the bin if its empty
+            if Nr_BH[j] < self.Nmin:
+                continue
+
+            # Interpolate fallback fraction at this mr
+            fb = fb_interp(Mr_BH[j] / Nr_BH[j])
+
+            if fb == 1.0:
+                continue
+
+            else:
+
+                # Compute retention fraction
+                retention = self._get_retention_frac(fb, self.vesc)
+
+                # keep track of how much we eject
+                natal_ejecta += Mr_BH[j] * (1 - retention)
+
+                # eject the mass
+                Mr_BH[j] *= retention
+                Nr_BH[j] *= retention
+
+        return Mr_BH, Nr_BH, natal_ejecta
+
+    def _eject_BH_dyn(self, Mr_BH, Nr_BH, *, M_eject=None):
         '''Determine and remove an amount of BHs from the final BH mass bins
 
         M_eject is amount of total mass to remove. If not given, compute based
         on `BH_ret_dyn`.
         '''
 
-        # Identify BH bins
-        # TODO need a better way for identifying remnants all over the place
-        BH_cut = self.me[:-1] >= self.mBH_min
-
         # calculate total mass we want to eject
         if M_eject is None:
-            M_eject = Mr[BH_cut].sum() * (1.0 - self.BH_ret_dyn)
+            M_eject = Mr_BH.sum() * (1.0 - self.BH_ret_dyn)
 
-        i = self.nbin
         # Remove BH starting from Heavy to Light
+        j = Mr_BH.size
 
         while M_eject != 0:
-            i -= 1
+            j -= 1
+
+            if j < 0:
+                mssg = 'Invalid `M_eject`, must be less than total Mr_BH'
+                raise ValueError(mssg)
 
             # Skip empty bins
-            if Nr[i] < self.Nmin:
+            if Nr_BH[j] < self.Nmin:
                 continue
 
             # Removed entirety of this bin
-            if Mr[i] < M_eject:
-                M_eject -= Mr[i]
-                Mr[i] = 0
-                Nr[i] = 0
+            if Mr_BH[j] < M_eject:
+                M_eject -= Mr_BH[j]
+                Mr_BH[j] = 0
+                Nr_BH[j] = 0
                 continue
 
             # Remove required fraction of the last affected bin
             else:
-                Mr[i] -= M_eject
-                Nr[i] -= M_eject / (Mr[i] / Nr[i])
+                Mr_BH[j] -= M_eject
+                Nr_BH[j] -= M_eject / (Mr_BH[j] / Nr_BH[j])
                 break
 
-        return Mr, Nr
+        return Mr_BH, Nr_BH
 
     def evolve(self):
 

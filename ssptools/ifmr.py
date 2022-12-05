@@ -47,6 +47,10 @@ class IFMR:
         # TODO polynomial starts misbehaving far above 0, but don't know where
         self.WD_mi = (0.0, WD_m_max)
 
+        # TODO not technically correct due to possible bump in top of polynomial
+        #   Should really stop using polynomials and use interpolated grid.
+        self.mWD_min, self.mWD_max = 0.0, self.predict(WD_m_max)
+
         # ------------------------------------------------------------------
         # Black Holes
         # ------------------------------------------------------------------
