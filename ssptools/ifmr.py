@@ -44,6 +44,7 @@ class IFMR:
 
         self._WD_spline = np.polynomial.Polynomial(WD_coeffs[::-1])
 
+        # TODO polynomial starts misbehaving far above 0, but don't know where
         self.WD_mi = (0.0, WD_m_max)
 
         # ------------------------------------------------------------------
@@ -135,8 +136,8 @@ class IFMR:
         )
 
         # If outside boundaries of the IFMR, warn user
-        if np.any(m_in > self.BH_mi[1]):
-            mssg = ("input mass exceeds BH IFMR grid, resulting mass is "
+        if np.any((m_in <= self.WD_mi[0]) | (m_in > self.BH_mi[1])):
+            mssg = ("input mass exceeds IFMR grid, resulting mass is "
                     "extrapolated and may be incorrect")
             logging.warning(mssg)
 
