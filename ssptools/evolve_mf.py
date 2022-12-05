@@ -501,7 +501,6 @@ class evolve_mf:
         # Check if any BH have been created
         if t > self.compute_tms(self.IFMR.BH_mi[0]):
 
-            # not a copy: directly modified by ejection functions
             Mr_BH, Nr_BH = Mr[rem_types == 'BH'], Nr[rem_types == 'BH']
 
             # calculate total mass we want to eject
@@ -514,6 +513,9 @@ class evolve_mf:
 
             # Remove dynamical BH ejections
             Mr_BH, Nr_BH = self._eject_BH_dyn(Mr_BH, Nr_BH, M_eject=M_eject)
+
+            # Save new BH values
+            Mr[rem_types == 'BH'], Nr[rem_types == 'BH'] = Mr_BH, Nr_BH
 
         return Ns, alphas, Ms, Nr, Mr, mes
 
