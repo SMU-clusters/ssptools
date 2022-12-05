@@ -338,6 +338,7 @@ class evolve_mf:
             # Skip 0-mass remnants
             if m_rem > 0:
 
+                # Find bin based on lower bin edge (must be careful later)
                 irem = np.where(m_rem > self.me)[0][-1]
 
                 # Compute Remnant retention fractions based on remnant type
@@ -452,74 +453,7 @@ class evolve_mf:
 
         return retention
 
-    def _extract_arrays(self, t, y):
-        '''Extract the masses and numbers from the ODE solution at time `t`
-
-        Extracts the relevant arrays from the solutions, accounts for the
-        turn-off mass in the mass bin edges, and ejects all BHs through
-        dynamical and natal-kick means
-        '''
-
-        # ------------------------------------------------------------------
-        # Extract the N, M and alphas for stars and remnants
-        # ------------------------------------------------------------------
-
-        nb = self.nbin
-
-        # Extract stars
-        Ns = y[0:nb]
-        alphas = y[nb:2 * nb]
-
-        # Some special treatment to adjust current turn-off bin edge
-        mes = np.copy(self.me)
-        if t > self.tms_u[-1]:
-            isev = np.where(self.me > self.compute_mto(t))[0][0] - 1
-            mes[isev + 1] = self.compute_mto(t)
-
-        As = Ns / self.Pk(alphas, 1, mes[0:-1], mes[1:])
-        Ms = As * self.Pk(alphas, 2, mes[0:-1], mes[1:])
-
-        # Extract remnants (copies due to below ejections)
-        Nr = y[2 * nb:3 * nb].copy()
-        Mr = y[3 * nb:4 * nb].copy()
-
-        # ------------------------------------------------------------------
-        # Determine types of remnants/stars in each bin
-        # ------------------------------------------------------------------
-
-        rem_types = np.full(nb, 'NS')
-        rem_types[self.me[:-1] < self.IFMR.mWD_max] = 'WD'
-
-        # Special handling to also include the bin containing mBH_min
-        cutoff = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min][-1]
-        rem_types[self.me[:-1] >= cutoff] = 'BH'
-
-        # ------------------------------------------------------------------
-        # Eject BHs, first through natal kicks, then dynamically
-        # ------------------------------------------------------------------
-
-        # Check if any BH have been created
-        if t > self.compute_tms(self.IFMR.BH_mi[0]):
-
-            Mr_BH, Nr_BH = Mr[rem_types == 'BH'], Nr[rem_types == 'BH']
-
-            # calculate total mass we want to eject
-            M_eject = Mr_BH.sum() * (1.0 - self.BH_ret_dyn)
-
-            # First remove mass from all bins through natal kicks, if desired
-            if self.natal_kicks:
-                Mr_BH, Nr_BH, M_kicked = self._eject_BH_natal(Mr_BH, Nr_BH)
-                M_eject -= M_kicked
-
-            # Remove dynamical BH ejections
-            Mr_BH, Nr_BH = self._eject_BH_dyn(Mr_BH, Nr_BH, M_eject=M_eject)
-
-            # Save new BH values
-            Mr[rem_types == 'BH'], Nr[rem_types == 'BH'] = Mr_BH, Nr_BH
-
-        return Ns, alphas, Ms, Nr, Mr, mes
-
-    def _eject_BH_natal(self, Mr_BH, Nr_BH):
+    def _natal_kick_BH(self, Mr_BH, Nr_BH):
 
         natal_ejecta = 0.0
 
@@ -558,7 +492,7 @@ class evolve_mf:
 
         return Mr_BH, Nr_BH, natal_ejecta
 
-    def _eject_BH_dyn(self, Mr_BH, Nr_BH, *, M_eject=None):
+    def _dyn_eject_BH(self, Mr_BH, Nr_BH, *, M_eject=None):
         '''Determine and remove an amount of BHs from the final BH mass bins
 
         M_eject is amount of total mass to remove. If not given, compute based
@@ -604,22 +538,19 @@ class evolve_mf:
         # Initialize output arrays
         # ------------------------------------------------------------------
 
-        # self.alphas = self.alphas0
-        self.alphas = np.empty((len(self.tout), self.nbin))
+        nb, nout = self.nbin, len(self.tout)
 
-        # self.Ns, self.Ms, self.ms = self.Ns0, self.Ms0, self.ms0
-        # self.Nr, self.Mr, self.mr = self.Nr0, self.Mr0, self.mr0
+        self.alphas = np.empty((nout, nb))
 
-        self.Ns = np.empty((len(self.tout), self.nbin))
-        self.Ms = np.empty((len(self.tout), self.nbin))
-        self.ms = np.empty((len(self.tout), self.nbin))
+        self.Ns = np.empty((nout, nb))
+        self.Ms = np.empty((nout, nb))
+        self.ms = np.empty((nout, nb))
 
-        self.Nr = np.empty((len(self.tout), self.nbin))
-        self.Mr = np.empty((len(self.tout), self.nbin))
-        self.mr = np.empty((len(self.tout), self.nbin))
+        self.mes = np.empty((nout, nb + 1))
 
-        # self.mes = self.mes0
-        self.mes = np.empty((len(self.tout), self.nbin + 1))
+        self.Nr = np.empty((nout, nb))
+        self.Mr = np.empty((nout, nb))
+        self.mr = np.empty((nout, nb))
 
         # ------------------------------------------------------------------
         # Initialise ODE solver
@@ -652,10 +583,65 @@ class evolve_mf:
 
                 iout = self.tout.index(ti)
 
-                # Extract values
-                Ns, alphas, Ms, Nr, Mr, mes = self._extract_arrays(ti, sol.y)
+                # ----------------------------------------------------------
+                # Extract the N, M and alphas for stars and remnants
+                # ----------------------------------------------------------
 
+                # Extract stars
+                Ns = sol.y[0:nb]
+                alphas = sol.y[nb:2 * nb]
+
+                # Some special treatment to adjust current turn-off bin edge
+                mes = np.copy(self.me)
+                if ti > self.tms_u[-1]:
+                    isev = np.where(self.me > self.compute_mto(ti))[0][0] - 1
+                    mes[isev + 1] = self.compute_mto(ti)
+
+                As = Ns / self.Pk(alphas, 1, mes[0:-1], mes[1:])
+                Ms = As * self.Pk(alphas, 2, mes[0:-1], mes[1:])
+
+                # Extract remnants (copies due to below ejections)
+                Nr = sol.y[2 * nb:3 * nb].copy()
+                Mr = sol.y[3 * nb:4 * nb].copy()
+
+                # ----------------------------------------------------------
+                # Determine types of remnants/stars in each bin
+                # ----------------------------------------------------------
+
+                rem_types = np.full(nb, 'NS')
+                rem_types[self.me[:-1] < self.IFMR.mWD_max] = 'WD'
+
+                # Special handling to also include the bin containing mBH_min
+                cutoff = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min][-1]
+                rem_types[self.me[:-1] >= cutoff] = 'BH'
+
+                # ----------------------------------------------------------
+                # Eject BHs, first through natal kicks, then dynamically
+                # ----------------------------------------------------------
+
+                # Check if any BH have been created
+                if ti > self.compute_tms(self.IFMR.BH_mi[0]):
+
+                    BH_cut = (rem_types == 'BH')
+
+                    Mr_BH, Nr_BH = Mr[BH_cut], Nr[BH_cut]
+
+                    # calculate total mass we want to eject
+                    M_eject = Mr_BH.sum() * (1.0 - self.BH_ret_dyn)
+
+                    # First remove mass from all bins by natal kicks, if desired
+                    if self.natal_kicks:
+                        Mr_BH, Nr_BH, kicked = self._natal_kick_BH(Mr_BH, Nr_BH)
+                        M_eject -= kicked
+
+                    # Remove dynamical BH ejections
+                    Mr[BH_cut], Nr[BH_cut] = self._dyn_eject_BH(Mr_BH, Nr_BH,
+                                                                M_eject=M_eject)
+
+                # ----------------------------------------------------------
                 # save values into output arrays
+                # ----------------------------------------------------------
+
                 self.alphas[iout, :] = alphas
 
                 # Stars
@@ -664,12 +650,17 @@ class evolve_mf:
 
                 self.ms[iout, :] = Ms / Ns
 
+                # Edges of star mass bins
+                self.mes[iout, :] = mes
+
                 # Remnants
                 self.Nr[iout, :] = Nr
                 self.Mr[iout, :] = Mr
 
+                # Precise mr only matters when Nr > 0
                 mr = 0.5 * (self.me[1:] + self.me[0:-1])
                 mr[Nr > 0] = Mr[Nr > 0] / Nr[Nr > 0]
                 self.mr[iout, :] = mr
 
-                self.mes[iout, :] = mes
+                # Remnant types
+                self.rem_types = rem_types
