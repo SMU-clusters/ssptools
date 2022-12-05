@@ -33,6 +33,23 @@ class IFMR:
         self._check_feh_bounds()
 
         # ------------------------------------------------------------------
+        # Black Holes
+        # ------------------------------------------------------------------
+
+        bhifmr = np.loadtxt(get_data(f"sse/MP_FEH{self.FeH_BH:+.2f}.dat"))
+
+        # Grab only stellar type 14
+        BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+
+        # linear spline to avoid boundary effects near m_A, m_B, etc
+        self._BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1)
+
+        self.BH_mi = (BH_mi[0], BH_mi[-1])
+
+        # self.mBH_min, self.mBH_max = np.min(BH_mf), np.max(BH_mf)
+        self.mBH_min, self.mBH_max = np.min(BH_mf), np.inf
+
+        # ------------------------------------------------------------------
         # White Dwarfs
         # ------------------------------------------------------------------
 
@@ -50,23 +67,6 @@ class IFMR:
         # TODO not technically correct due to possible bump in top of polynomial
         #   Should really stop using polynomials and use interpolated grid.
         self.mWD_min, self.mWD_max = 0.0, self.predict(WD_m_max)
-
-        # ------------------------------------------------------------------
-        # Black Holes
-        # ------------------------------------------------------------------
-
-        bhifmr = np.loadtxt(get_data(f"sse/MP_FEH{self.FeH_BH:+.2f}.dat"))
-
-        # Grab only stellar type 14
-        BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
-
-        # linear spline to avoid boundary effects near m_A, m_B, etc
-        self._BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1)
-
-        self.BH_mi = (BH_mi[0], BH_mi[-1])
-
-        # self.mBH_min, self.mBH_max = np.min(BH_mf), np.max(BH_mf)
-        self.mBH_min, self.mBH_max = np.min(BH_mf), np.inf
 
         # ------------------------------------------------------------------
         # Neutron Stars
