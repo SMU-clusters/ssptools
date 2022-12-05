@@ -7,6 +7,8 @@ from scipy.interpolate import interp1d, UnivariateSpline
 
 from .ifmr import IFMR, get_data
 
+# TODO optionally support units for some things
+
 
 class evolve_mf:
     r'''
@@ -533,6 +535,16 @@ class evolve_mf:
         return Mr_BH, Nr_BH
 
     def evolve(self):
+        '''Evolve the population of stars up to the desired age and save results
+
+        Solves the various relevant derivatives using a `dopri5` ODE
+        integrator, over all times in `self.t`, up to the maximum desired
+        `tout`. For all desired output times in `tout`, the alphas, total number
+        (Ns, Nr), total mass (Ms, Mr) and mean mass (ms, mr) are computed and
+        saved, as well as the correct mass bin edges at said time
+        (mes; accounting for the turn-off time at that `tout`) and the types
+        of remnants stored in each remnant mass bin (rem_types; WD, NS, BH).
+        '''
 
         # ------------------------------------------------------------------
         # Initialize output arrays
@@ -618,6 +630,8 @@ class evolve_mf:
                 # ----------------------------------------------------------
                 # Eject BHs, first through natal kicks, then dynamically
                 # ----------------------------------------------------------
+                # TODO really feels like this should be done during the
+                #   evolution/derivs? At least for the natal kicks.
 
                 # Check if any BH have been created
                 if ti > self.compute_tms(self.IFMR.BH_mi[0]):
