@@ -11,37 +11,42 @@ from .ifmr import IFMR, get_data
 
 
 class evolve_mf:
-    r'''
-    Class to evolve the stellar mass function, to be included in EMACSS
-    For nbin mass bins, the routine solves for an array with length 4nbin,
-    containing:
-    y = {N_stars_j, alpha_stars_j, N_remnants_j, M_remnants_j}
+    r'''Evolve an IMF to a present-day mass function at a given age
 
-    based on \dot{y}
+    Evolves an arbitrary N-component power law initial mass function (IMF)
+    to a binned present-day mass function (PDMF) at a given set of ages, and
+    computes the numbers and masses of stars and remnants in each mass bin.
+
+    # TODO add more in-depth explanation or references to actual algorithm here
+
+    Warning: Currently only supports N=3 IMF components
 
     Parameters
     ----------
-    m123 : list of float
-        Break-masses (including outer bounds; size N+1)
+    m_breaks : list of float
+        IMF break-masses (including outer bounds; size N+1)
 
-    a12 : list of float
-        mass function slopes (size N)
+    a_slopes : list of float
+        IMF slopes α (size N)
 
-    nbin12 : list of int
-        Number of mass bins in each regime (size N)
-
-    N0 : int
-        Total initial number of stars
+    nbins : list of int
+        Number of mass bins in each regime of the IMF, as defined by m_breaks
+        (size N)
 
     tout : list of int
-        Times to output masses at [years]
+        Times, in years, at which to output PDMF. Defines the shape of many
+        outputted attributes
+
+    N0 : int
+        Total initial number of stars, over all bins
 
     Ndot : float
-        Regulates low-mass object depletion due to dynamical evolution
-        [stars / Myr]
+        Represents rate of change of the number of stars N over time, in stars
+        per Myr. Regulates low-mass object depletion (ejection) due to dynamical
+        evolution
 
     tcc : float
-        Core collapse time
+        Core collapse time, in years
 
     NS_ret : float
         Neutron star retention fraction (0 to 1)
@@ -55,16 +60,61 @@ class evolve_mf:
     FeH : float
         Metallicity, in solar fraction [Fe/H]
 
-    natal_kicks : bool
-        Whether to account for natal kicks in the BH dynamical retention
+    natal_kicks : bool, optional
+        Whether to account for natal kicks in the BH dynamical retention.
+        Defaults to False
 
-    vesc : float
-        Cluster escape velocity, in km/s, for use in the computation of BH
-        natal kick effects
+    vesc : float, optional
+        Initial cluster escape velocity, in km/s, for use in the computation of
+        BH natal kick effects. Defaults to 90 km/s
 
+    Attributes
+    ----------
+
+    nbin : int
+        Total number of bins (sum of nbins parameter)
+
+    nout : int
+        Total number of output times (len of tout parameter)
+
+    alphas : ndarray
+        Array[nout, nbin] of  PDMF slopes. If Ndot = 0, this is defined entirely
+        by the IMF
+
+    Ns : ndarray
+        Array[nout, nbin] of the total number of (main sequence) stars in each
+        mass bin
+
+    Ms : ndarray
+        Array[nout, nbin] of the total mass of (main sequence) stars in each
+        mass bin
+
+    ms : ndarray
+        Array[nout, nbin] of the individual mass of (main sequence) stars in
+        each mass bin, as defined by Ms / Ns
+
+    mes : ndarray
+        Array[nout, nbin + 1] representing the mass bin edges, defined by the
+        m_breaks and nbins parameters. Note that ms *does not* necessarily fall
+        in the middle of these edges
+
+    Nr : ndarray
+        Array[nout, nbin] of the total number of remnants in each mass bin
+
+    Mr : ndarray
+        Array[nout, nbin] of the total mass of remnants in each mass bin
+
+    mr : ndarray
+        Array[nout, nbin] of the individual mass of remnants in
+        each mass bin, as defined by Mr / Nr
+
+    rem_types : ndarray
+        Array[nout, nbin] of 2-character strings representing the remnant types
+        found in each mass bin of the remnant (Mr, Nr, mr) arrays. "WD" = white
+        dwarfs, "NS" = neutron stars, "BH" = black holes
     '''
 
-    def __init__(self, m123, a12, nbin12, tout, N0, Ndot, tcc,
+    def __init__(self, m_breaks, a_slopes, nbins, tout, N0, Ndot, tcc,
                  NS_ret, BH_ret_int, BH_ret_dyn,
                  FeH, natal_kicks=False, vesc=90):
 
@@ -72,7 +122,7 @@ class evolve_mf:
         # Initialise the mass bins given the power-law IMF slopes and bins
         # ------------------------------------------------------------------
 
-        self._set_imf(m123, a12, nbin12, N0)
+        self._set_imf(m_breaks, a_slopes, nbins, N0)
 
         # ------------------------------------------------------------------
         # Set various other parameters
@@ -146,10 +196,32 @@ class evolve_mf:
         self.evolve()
 
     def Pk(self, a, k, m1, m2):
-        '''Useful function
+        r'''Convenience function for computing quantities related to IMF
 
         ..math ::
+            \begin{align}
+                P_k(\alpha_j,\ m_{j,1},\ m_{j,2})
+                    &= \int_{m_{j,1}}^{m_{j,2}} m^{\alpha_j + k - 1}
+                        \ \mathrm{d}m \\
+                    &= \begin{cases}
+                        \frac{m_{j,2}^{\alpha_j+k} - m_{j,1}^{\alpha_j+k} }
+                             {\alpha_j + k},
+                             \quad \alpha_j + k \neq 0 \\
+                        \ln{\left(\frac{m_{j,2}}{m_{j,1}}\right)},
+                            \quad \alpha_j + k = 0
+                    \end{cases}
+            \end{align}
 
+        Parameters
+        ----------
+        a : float
+            Mass function power law slope effective between m1 and m2
+
+        k : int
+            k-index
+
+        m1, m2 : float
+            Upper and lower bound of given mass bin or range
         '''
         try:
             return (m2 ** (a + k) - m1 ** (a + k)) / (a + k)
@@ -159,6 +231,10 @@ class evolve_mf:
 
     def _set_imf(self, m_break, a, nbin, N0):
         '''Initialize the mass bins based on the IMF and initial number of stars
+
+        Modifies in place a number of attributes of this class, related to the
+        initial setup of the output quantities, including nbin, me, mes0,
+        alphas0, Ns0, Ms0, ms0, Nr0, Mr0, mr0
 
         Parameters
         ----------
@@ -261,7 +337,7 @@ class evolve_mf:
         t : float
             Time step to compute derivatives at
 
-        y : list of array
+        y : list of ndarray
             Equation system solution y. Size-4 array containing the arrays,
             for each mass bin, of the number of stars `Ns`, the mass function
             slopes `alpha`, the number of remnants `Nr` and the total bin mass
@@ -269,7 +345,7 @@ class evolve_mf:
 
         Returns
         -------
-        list of array
+        list of ndarray
             Time derivatives of each of the four quantities described by `y`
         '''
 
@@ -427,12 +503,7 @@ class evolve_mf:
         return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
     def _get_retention_frac(self, fb, vesc):
-        '''Compute BH natal-kick retention fraction
-
-        ..math::
-
-        based on fallback fraction and escape velocity
-        '''
+        '''Compute BH natal-kick retention fraction'''
 
         def _maxwellian(x, a):
             norm = np.sqrt(2 / np.pi)
@@ -456,6 +527,34 @@ class evolve_mf:
         return retention
 
     def _natal_kick_BH(self, Mr_BH, Nr_BH):
+        '''Computes the effects of BH natal-kicks on the mass and number of BHs
+
+        Determines the effects of BH natal-kicks based on the fallback fraction
+        and escape velocity of this population.
+
+        Parameters
+        ----------
+        Mr_BH : ndarray
+            Array[nbin] of the total initial masses of black holes in each
+            BH mass bin
+
+        Nr_BH : ndarray
+            Array[nbin] of the total initial numbers of black holes in each
+            BH mass bin
+
+        Returns
+        -------
+        Mr_BH : ndarray
+            Array[nbin] of the total final masses of black holes in each
+            BH mass bin, after natal kicks
+
+        Nr_BH : ndarray
+            Array[nbin] of the total final numbers of black holes in each
+            BH mass bin, after natal kicks
+
+        natal_ejecta : float
+            The total mass of BHs ejected through natal kicks
+        '''
 
         natal_ejecta = 0.0
 
@@ -495,10 +594,38 @@ class evolve_mf:
         return Mr_BH, Nr_BH, natal_ejecta
 
     def _dyn_eject_BH(self, Mr_BH, Nr_BH, *, M_eject=None):
-        '''Determine and remove an amount of BHs from the final BH mass bins
+        '''Determine and remove BHs, to represent dynamical ejections
 
-        M_eject is amount of total mass to remove. If not given, compute based
-        on `BH_ret_dyn`.
+        Determines and removes an amount of BHs from the BH mass bins, designed
+        to reflect the effects of dynamical ejections of centrally concentrated
+        BHs from a cluster.
+        Proceeds from the heaviest BH bins to the lightest, removing all mass
+        in each bin until the desired amount of ejected mass is reached.
+
+        Parameters
+        ----------
+        Mr_BH : ndarray
+            Array[nbin] of the total initial masses of black holes in each
+            BH mass bin
+
+        Nr_BH : ndarray
+            Array[nbin] of the total initial numbers of black holes in each
+            BH mass bin
+
+        M_eject : float, optional
+            Total amount of BH mass to remove through dynamical ejections.
+            If None (default), will be computed based on the `BH_ret_dyn`
+            parameter
+
+        Returns
+        -------
+        Mr_BH : ndarray
+            Array[nbin] of the total final masses of black holes in each
+            BH mass bin, after dynamical ejections
+
+        Nr_BH : ndarray
+            Array[nbin] of the total final numbers of black holes in each
+            BH mass bin, after dynamical ejections
         '''
 
         # calculate total mass we want to eject
@@ -539,22 +666,15 @@ class evolve_mf:
         return Mr_BH, Nr_BH
 
     def evolve(self):
-        '''Evolve the population of stars up to the desired age and save results
-
-        Solves the various relevant derivatives using a `dopri5` ODE
-        integrator, over all times in `self.t`, up to the maximum desired
-        `tout`. For all desired output times in `tout`, the alphas, total number
-        (Ns, Nr), total mass (Ms, Mr) and mean mass (ms, mr) are computed and
-        saved, as well as the correct mass bin edges at said time
-        (mes; accounting for the turn-off time at that `tout`) and the types
-        of remnants stored in each remnant mass bin (rem_types; WD, NS, BH).
-        '''
+        '''Main population evolution function, to be called on init'''
 
         # ------------------------------------------------------------------
         # Initialize output arrays
         # ------------------------------------------------------------------
 
         nb, nout = self.nbin, len(self.tout)
+
+        self.nout = nout
 
         self.alphas = np.empty((nout, nb))
 
