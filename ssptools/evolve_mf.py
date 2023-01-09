@@ -443,7 +443,7 @@ class evolve_mf:
             return 1.0
 
         # Integrate over the Maxwellian up to the escape velocity
-        v_space = np.linspace(0, 1000, 1001)
+        v_space = np.linspace(0, 1000, 1000)
 
         # TODO might be a quicker way to numerically integrate than a spline
         retention = UnivariateSpline(
