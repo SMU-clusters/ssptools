@@ -528,8 +528,12 @@ class evolve_mf:
 
             # Remove required fraction of the last affected bin
             else:
+
+                mr_BH_j = Mr_BH[j] / Nr_BH[j]
+
                 Mr_BH[j] -= M_eject
-                Nr_BH[j] -= M_eject / (Mr_BH[j] / Nr_BH[j])
+                Nr_BH[j] -= M_eject / (mr_BH_j)
+
                 break
 
         return Mr_BH, Nr_BH
