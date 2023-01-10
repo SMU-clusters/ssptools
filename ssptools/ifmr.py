@@ -3,24 +3,34 @@
 
 import pathlib
 import logging
+import collections
 
 import numpy as np
 from scipy.interpolate import UnivariateSpline
 
 
+bounds = collections.namedtuple('bounds', ('lower', 'upper'))
+
 _ROOT = pathlib.Path(__file__).parent
 
 
 def get_data(path):
-    """Get data from path relative to install dir."""
+    '''Get path of data from path relative to install dir.'''
     return _ROOT / "data" / path
 
 
 class IFMR:
-    """
+    '''
     Provides a class for the initial-final mass of all stellar remnants.
     These are based on MIST and SSE models at different metallicities.
-    """
+
+
+    mBH_min : float
+        Alias to BH_mf[0], for backwards compatibility
+
+    mWD_max : float
+        Alias to WD_mf[1], for backwards compatibility
+    '''
 
     def __init__(self, FeH):
 
@@ -44,10 +54,11 @@ class IFMR:
         # linear spline to avoid boundary effects near m_A, m_B, etc
         self._BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1)
 
-        self.BH_mi = (BH_mi[0], BH_mi[-1])
+        self.BH_mi = bounds(BH_mi[0], BH_mi[-1])
 
         # self.mBH_min, self.mBH_max = np.min(BH_mf), np.max(BH_mf)
-        self.mBH_min, self.mBH_max = np.min(BH_mf), np.inf
+        self.BH_mf = bounds(np.min(BH_mf), np.inf)
+        self.mBH_min = self.BH_mf.lower
 
         # ------------------------------------------------------------------
         # White Dwarfs
@@ -62,17 +73,19 @@ class IFMR:
         self._WD_spline = np.polynomial.Polynomial(WD_coeffs[::-1])
 
         # TODO polynomial starts misbehaving far above 0, but don't know where
-        self.WD_mi = (0.0, WD_m_max)
+        self.WD_mi = bounds(0.0, WD_m_max)
 
         # TODO not technically correct due to possible bump in top of polynomial
         #   Should really stop using polynomials and use interpolated grid.
-        self.mWD_min, self.mWD_max = 0.0, self.predict(WD_m_max)
+        self.WD_mf = bounds(0.0, self.predict(WD_m_max))
+        self.mWD_max = self.WD_mf.upper
 
         # ------------------------------------------------------------------
         # Neutron Stars
         # ------------------------------------------------------------------
 
-        self.NS_mi = (self.WD_mi[1], self.BH_mi[0])
+        self.NS_mi = bounds(self.WD_mi[1], self.BH_mi[0])
+        self.NS_mf = bounds(1.4, 1.4)
 
     def _check_feh_bounds(self):
         '''Ensure FeH is within model grid and adjust otherwise'''

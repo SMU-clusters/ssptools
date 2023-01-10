@@ -796,11 +796,12 @@ class evolve_mf:
                 # Determine types of remnants/stars in each bin
                 # ----------------------------------------------------------
 
+                # TODO change to use IFMR predict_type
                 rem_types = np.full(nb, 'NS')
-                rem_types[self.me[:-1] < self.IFMR.mWD_max] = 'WD'
+                rem_types[self.me[:-1] < self.IFMR.WD_mf.upper] = 'WD'
 
                 # Special handling to also include the bin containing mBH_min
-                cutoff = self.me[:-1][self.me[:-1] < self.IFMR.mBH_min][-1]
+                cutoff = self.me[:-1][self.me[:-1] < self.IFMR.BH_mf.lower][-1]
                 rem_types[self.me[:-1] >= cutoff] = 'BH'
 
                 # ----------------------------------------------------------
@@ -810,7 +811,7 @@ class evolve_mf:
                 #   evolution/derivs? At least for the natal kicks.
 
                 # Check if any BH have been created
-                if ti > self.compute_tms(self.IFMR.BH_mi[0]):
+                if ti > self.compute_tms(self.IFMR.BH_mi.lower):
 
                     BH_cut = (rem_types == 'BH')
 
