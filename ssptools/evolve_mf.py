@@ -112,7 +112,59 @@ class evolve_mf:
         Array[nout, nbin] of 2-character strings representing the remnant types
         found in each mass bin of the remnant (Mr, Nr, mr) arrays. "WD" = white
         dwarfs, "NS" = neutron stars, "BH" = black holes
+
+    M : ndarray
+        Array containing the total mass in all non-empty mass bins, including
+        both stars and remnants, based on the final age given by tout.
+
+    N : ndarray
+        Array containing the total number in all non-empty mass bins, including
+        both stars and remnants, based on the final age given by tout.
+
+    m : ndarray
+        Array containing the individual mass in all non-empty mass bins,
+        including both stars and remnants, based on the final age given by tout.
+
+    types : ndarray
+        Array of 2-character strings representing the object type of the
+        corresponding bins of the M, N and m properties. "MS" = main sequence
+        stars, "WD" = white dwarfs, "NS" = neutron stars, "BH" = black holes
     '''
+
+    @property
+    def M(self):
+        # TODO why is it 10*Nmin
+        cs = self.Ns[-1] > 10 * self.Nmin
+        Ms = self.Ms[-1][cs]
+
+        cr = self.Nr[-1] > 10 * self.Nmin
+        Mr = self.Mr[-1][cr]
+
+        return np.r_[Ms, Mr]
+
+    @property
+    def N(self):
+        cs = self.Ns[-1] > 10 * self.Nmin
+        Ns = self.Ns[-1][cs]
+
+        cr = self.Nr[-1] > 10 * self.Nmin
+        Nr = self.Nr[-1][cr]
+
+        return np.r_[Ns, Nr]
+
+    @property
+    def m(self):
+        return self.M / self.N
+
+    @property
+    def types(self):
+        cs = self.Ns[-1] > 10 * self.Nmin
+        cr = self.Nr[-1] > 10 * self.Nmin
+
+        ts = ['MS'] * cs.sum()
+        tr = self.rem_types[cr]
+
+        return np.r_[ts, tr]
 
     def __init__(self, m_breaks, a_slopes, nbins, tout, N0, Ndot, tcc,
                  NS_ret, BH_ret_int, BH_ret_dyn,
