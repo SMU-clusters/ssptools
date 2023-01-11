@@ -33,32 +33,32 @@ class evolve_mf:
         Number of mass bins in each regime of the IMF, as defined by m_breaks
         (size N)
 
+    FeH : float
+        Metallicity, in solar fraction [Fe/H]
+
     tout : list of int
         Times, in years, at which to output PDMF. Defines the shape of many
         outputted attributes
-
-    N0 : int
-        Total initial number of stars, over all bins
 
     Ndot : float
         Represents rate of change of the number of stars N over time, in stars
         per Myr. Regulates low-mass object depletion (ejection) due to dynamical
         evolution
 
-    tcc : float
-        Core collapse time, in years
+    N0 : int, optional
+        Total initial number of stars, over all bins. Defaults to 5e5 stars
 
-    NS_ret : float
-        Neutron star retention fraction (0 to 1)
+    tcc : float, optional
+        Core collapse time, in years. Defaults to 0, effectively being ignored
 
-    BH_ret_int : float
-        Initial black hole retention fraction (0 to 1)
+    NS_ret : float, optional
+        Neutron star retention fraction (0 to 1). Defaults to 0.1 (10%)
 
-    BH_ret_dyn : float
-        Dynamical black hole retention fraction (0 to 1)
+    BH_ret_int : float, optional
+        Initial black hole retention fraction (0 to 1). Defaults to 1 (100%)
 
-    FeH : float
-        Metallicity, in solar fraction [Fe/H]
+    BH_ret_dyn : float, optional
+        Dynamical black hole retention fraction (0 to 1). Defaults to 1 (100%)
 
     natal_kicks : bool, optional
         Whether to account for natal kicks in the BH dynamical retention.
@@ -166,9 +166,9 @@ class evolve_mf:
 
         return np.r_[ts, tr]
 
-    def __init__(self, m_breaks, a_slopes, nbins, tout, N0, Ndot, tcc,
-                 NS_ret, BH_ret_int, BH_ret_dyn,
-                 FeH, natal_kicks=False, vesc=90):
+    def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot,
+                 N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
+                 natal_kicks=False, vesc=90):
 
         # ------------------------------------------------------------------
         # Initialise the mass bins given the power-law IMF slopes and bins
@@ -245,9 +245,9 @@ class evolve_mf:
         # Initialize iteration counter
         self.nstep = 0
 
-        self.evolve()
+        self._evolve()
 
-    def Pk(self, a, k, m1, m2):
+    def _Pk(self, a, k, m1, m2):
         r'''Convenience function for computing quantities related to IMF
 
         ..math ::
@@ -311,11 +311,11 @@ class evolve_mf:
         # ------------------------------------------------------------------
 
         A3 = (
-            self.Pk(a[2], 1, m_break[2], m_break[3])
+            self._Pk(a[2], 1, m_break[2], m_break[3])
             + (m_break[1] ** (a[1] - a[0])
-               * self.Pk(a[0], 1, m_break[0], m_break[1]))
+               * self._Pk(a[0], 1, m_break[0], m_break[1]))
             + (m_break[2] ** (a[2] - a[1])
-               * self.Pk(a[1], 1, m_break[1], m_break[2]))
+               * self._Pk(a[1], 1, m_break[1], m_break[2]))
         ) ** (-1)
 
         A2 = A3 * m_break[2] ** (a[2] - a[1])
@@ -350,8 +350,8 @@ class evolve_mf:
         self.alphas0 = alpha
 
         # Set initial star bins based on IMF
-        self.Ns0 = A * self.Pk(alpha, 1, self.me[0:-1], self.me[1:])
-        self.Ms0 = A * self.Pk(alpha, 2, self.me[0:-1], self.me[1:])
+        self.Ns0 = A * self._Pk(alpha, 1, self.me[0:-1], self.me[1:])
+        self.Ms0 = A * self._Pk(alpha, 2, self.me[0:-1], self.me[1:])
         self.ms0 = self.Ms0 / self.Ns0
 
         # Set all initial remnant bins to zero
@@ -444,7 +444,7 @@ class evolve_mf:
                 alphaj = y[self.nbin + isev]
 
                 # The normalization constant
-                Aj = Nj / self.Pk(alphaj, 1, m1, mto)
+                Aj = Nj / self._Pk(alphaj, 1, m1, mto)
 
                 # Get the number of turn-off stars per unit of mass
                 dNdm = Aj * mto ** alphaj
@@ -532,8 +532,8 @@ class evolve_mf:
         m1 = mes[0:-1]
         m2 = mes[1:]
 
-        P1 = self.Pk(alphas, 1, m1, m2)
-        P15 = self.Pk(alphas, 1.5, m1, m2)
+        P1 = self._Pk(alphas, 1, m1, m2)
+        P15 = self._Pk(alphas, 1.5, m1, m2)
 
         # Compute relevant rate-of-change integrals I_j, J_j
         c = (mr < self.md) & (m1 < m2)
@@ -717,7 +717,7 @@ class evolve_mf:
 
         return Mr_BH, Nr_BH
 
-    def evolve(self):
+    def _evolve(self):
         '''Main population evolution function, to be called on init'''
 
         # ------------------------------------------------------------------
@@ -785,8 +785,8 @@ class evolve_mf:
                     isev = np.where(self.me > self.compute_mto(ti))[0][0] - 1
                     mes[isev + 1] = self.compute_mto(ti)
 
-                As = Ns / self.Pk(alphas, 1, mes[0:-1], mes[1:])
-                Ms = As * self.Pk(alphas, 2, mes[0:-1], mes[1:])
+                As = Ns / self._Pk(alphas, 1, mes[0:-1], mes[1:])
+                Ms = As * self._Pk(alphas, 2, mes[0:-1], mes[1:])
 
                 # Extract remnants (copies due to below ejections)
                 Nr = sol.y[2 * nb:3 * nb].copy()
