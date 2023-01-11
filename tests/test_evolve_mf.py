@@ -63,6 +63,7 @@ class TestClassMethods:
     # ----------------------------------------------------------------------
     # Testing computation of m_to turnoff mass
     # ----------------------------------------------------------------------
+    # mto function asymptotes at a0, then is imaginary to the left, except at 0
 
     def test_mto_values(self):
         ti = np.array([8.10364433e+04, 5.72063993e+03, 1.80376582e+00])
@@ -120,6 +121,90 @@ class TestClassMethods:
         Pk = self.emf._Pk(a=a, k=k, m1=m1, m2=m2)
 
         assert Pk == pytest.approx(expected, abs=err)
+
+
+class TestBHEvolution:
+
+    emf_kw = DEFAULT_KWARGS.copy() | {'tout': [0.]}
+
+    @pytest.fixture()
+    def Mi(self):
+        return np.array([10., 10., 10.])
+
+    @pytest.fixture()
+    def Ni(self):
+        return np.array([20., 10., 5.])
+
+    # ----------------------------------------------------------------------
+    # Test BH natal kick routines
+    # ----------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        'vesc, expected',
+        [
+            (25., np.stack((np.array([0.002227, 0.002227, 0.002779]),
+                            np.array([0.004454, 0.002227, 0.001389])))),
+            (100., np.stack((np.array([0.136963, 0.136963, 0.169875]),
+                             np.array([0.273926, 0.136963, 0.084937])))),
+            (200., np.stack((np.array([0.966443, 0.966443, 1.175480]),
+                             np.array([1.932887, 0.966443, 0.587740])))),
+        ],
+        ids=[f'vesc = {v}' for v in (25, 100, 200)]
+    )
+    def test_natal_kick_quantities(self, Mi, Ni, vesc, expected):
+
+        # Results not actually reliant on this evolution, just need the object
+        kw = self.emf_kw | {'vesc': vesc, 'natal_kicks': True}
+        emf = evolve_mf.evolve_mf(**kw)
+
+        Mf, Nf, _ = emf._natal_kick_BH(Mi, Ni)
+
+        assert np.stack((Mf, Nf)) == pytest.approx(expected, rel=1e-3)
+
+    @pytest.mark.parametrize(
+        'vesc, expected',
+        [
+            (25., 29.992765),
+            (100., 29.556198),
+            (200., 26.891631),
+        ],
+        ids=[f'vesc = {v}' for v in (25, 100, 200)]
+    )
+    def test_natal_kick_total(self, Mi, Ni, vesc, expected):
+
+        kw = self.emf_kw | {'vesc': vesc, 'natal_kicks': True}
+        emf = evolve_mf.evolve_mf(**kw)
+
+        _, _, ejected = emf._natal_kick_BH(Mi, Ni)
+
+        assert ejected == pytest.approx(expected, rel=1e-3)
+
+    # ----------------------------------------------------------------------
+    # Test BH dynamical ejection routines
+    # ----------------------------------------------------------------------
+
+    base_emf = evolve_mf.evolve_mf(**emf_kw)
+
+    @pytest.mark.parametrize(
+        'M_eject, expected',
+        [
+            (0., np.stack((np.array([10., 10, 10]), np.array([20., 10, 5])))),
+            (15., np.stack((np.array([10., 5, 0]), np.array([20., 5, 0])))),
+            (30., np.stack((np.array([0., 0, 0]), np.array([0., 0, 0])))),
+        ],
+    )
+    def test_dyn_ej_quantities(self, Mi, Ni, M_eject, expected):
+
+        Mf, Nf = self.base_emf._dyn_eject_BH(Mi, Ni, M_eject=M_eject)
+
+        assert np.stack((Mf, Nf)) == pytest.approx(expected)
+
+    def test_dyn_ej_overflow(self, Mi, Ni):
+
+        M_eject_overflow = Mi.sum() + 0.1
+
+        with pytest.raises(ValueError):
+            self.base_emf._dyn_eject_BH(Mi, Ni, M_eject=M_eject_overflow)
 
 # come up with different combination of initial params
 # test the final value of all output attributes, for all these initials
