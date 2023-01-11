@@ -411,7 +411,6 @@ class evolve_mf:
         derivs_sev = self._derivs_sev(t, y)
 
         # Only run the dynamical star losses `derivs_esc` if Ndot is not zero
-        # TODO add initial check that Ndot is not > 0
         if self.Ndot < 0:
             derivs_esc = self._derivs_esc(t, y)
         else:
@@ -798,8 +797,10 @@ class evolve_mf:
                 # ----------------------------------------------------------
                 # Determine types of remnants/stars in each bin
                 # ----------------------------------------------------------
+                # *not* the same as `IFMR.predict_type`, but the probable
+                #   remnant in each final bin
 
-                # TODO change to use IFMR predict_type
+                # TODO change how bins are done, this isn't guaranteed accurate
                 rem_types = np.full(nb, 'NS')
                 rem_types[self.me[:-1] < self.IFMR.WD_mf.upper] = 'WD'
 

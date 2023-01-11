@@ -52,7 +52,7 @@ class IFMR:
         BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
 
         # linear spline to avoid boundary effects near m_A, m_B, etc
-        self._BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1)
+        self._BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
 
         self.BH_mi = bounds(BH_mi[0], BH_mi[-1])
 
@@ -153,10 +153,9 @@ class IFMR:
         )
 
         # If outside boundaries of the IFMR, warn user
-        # TODO should splines extrapolate or cutoff outise bounds? (ext=0|3?)
         if np.any((m_in <= self.WD_mi[0]) | (m_in > self.BH_mi[1])):
             mssg = ("input mass exceeds IFMR grid, resulting mass is "
-                    "extrapolated and may be incorrect")
+                    "extrapolated and may be very incorrect")
             logging.warning(mssg)
 
         # if m_in is a single float, reconvert to match
