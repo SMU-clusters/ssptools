@@ -153,6 +153,7 @@ class IFMR:
         )
 
         # If outside boundaries of the IFMR, warn user
+        # TODO should splines extrapolate or cutoff outise bounds? (ext=0|3?)
         if np.any((m_in <= self.WD_mi[0]) | (m_in > self.BH_mi[1])):
             mssg = ("input mass exceeds IFMR grid, resulting mass is "
                     "extrapolated and may be incorrect")
