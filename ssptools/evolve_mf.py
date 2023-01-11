@@ -370,15 +370,7 @@ class evolve_mf:
     def compute_mto(self, t):
         '''Compute the turn-off mass for a given time `t` (inverse of tms)'''
         a = self._tms_constants
-
-        # TODO why is this hard limit applied? if necessary, shouldnt recompute
-        if t < self.compute_tms(100):
-            mto = 100
-
-        else:
-            mto = (np.log(t / a[0]) / a[1]) ** (1 / a[2])
-
-        return mto
+        return (np.log(t / a[0]) / a[1]) ** (1 / a[2])
 
     def _derivs(self, t, y):
         '''Main function for computing derivatives relevant to mass evolution
@@ -446,6 +438,7 @@ class evolve_mf:
                 alphaj = y[self.nbin + isev]
 
                 # The normalization constant
+                # TODO deal with the constant divide-by-zero warning here
                 Aj = Nj / self._Pk(alphaj, 1, m1, mto)
 
                 # Get the number of turn-off stars per unit of mass
