@@ -17,7 +17,7 @@ DEFAULT_KWARGS = dict(
 )
 
 
-class TestClassMethods:
+class TestHelperMethods:
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -206,5 +206,65 @@ class TestBHEvolution:
         with pytest.raises(ValueError):
             self.base_emf._dyn_eject_BH(Mi, Ni, M_eject=M_eject_overflow)
 
-# come up with different combination of initial params
-# test the final value of all output attributes, for all these initials
+
+# class TestMassEvolution:
+class TestDerivatives:
+
+    # TODO tests for the _set_imf and _evolve functions, the only ones which
+    #   modify in-place, so I haven't touched them here
+
+    emf_kw = DEFAULT_KWARGS.copy() | {'tout': [0.], 'nbins': [1, 1, 2]}
+
+    # ----------------------------------------------------------------------
+    # Derivative routines
+    # ----------------------------------------------------------------------
+
+    @pytest.fixture()
+    def y(self):
+        nb = sum(self.emf_kw['nbins'])
+        return np.array([1000] * nb + [1] * nb + [10] * nb + [2] * nb)
+
+    @pytest.mark.parametrize(
+        't, expected',
+        [
+            (100, np.array([0., 0., -10.16057518, 0.,
+                            0., 0., 0., 0.,
+                            0., 0., 10.16057518, 0.,
+                            0., 0., 11.28587621, 0.])),
+            (12000, np.array([0., -0.07375997, 0., 0.,
+                              0., 0., 0., 0.,
+                              0., 0.07375997, 0., 0.,
+                              0., 0.04325484, 0., 0.])),
+        ],
+    )
+    def test_sev(self, y, t, expected):
+
+        emf = evolve_mf.evolve_mf(**self.emf_kw)
+
+        ydot = emf._derivs_sev(t, y)
+        assert ydot == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        't, expected',
+        [
+            (100, np.array([7.588256e-01, 3.191671e-01, -9.576813e-01,
+                            -1.015838e+01, -3.566531e-04, -6.205286e-04,
+                            -1.096328e-03, -3.734391e-03, 9.519368e-03,
+                            9.519368e-03, 9.519368e-03, 9.519368e-03,
+                            1.903873e-03, 1.903873e-03, 1.903873e-03,
+                            1.903873e-03])),
+            (12000, np.array([6.814154e-01, 3.696330e-01, -1.907299e+00,
+                              -9.177942e+00, -3.202699e-04, -5.273448e-04,
+                              -1.187120e-03, -3.916009e-03, 8.548268e-03,
+                              8.548268e-03, 8.548268e-03, 8.548268e-03,
+                              1.709653e-03, 1.709653e-03, 1.709653e-03,
+                              1.709653e-03])),
+        ],
+    )
+    def test_esc(self, y, t, expected):
+
+        kw = self.emf_kw | {'Ndot': -10}
+        emf = evolve_mf.evolve_mf(**kw)
+
+        ydot = emf._derivs_esc(t, y)
+        assert ydot == pytest.approx(expected)
