@@ -1,0 +1,39 @@
+[project]
+name = "ssptools"
+version = "0.2.0"
+description = "Simple Stellar Population Tools"
+authors = [
+    {name = "Eduardo Balbinot", email = "eduardo.balbinot@gmail.com"},
+    {name = "Nolan Dickson", email = "nolan.dickson@smu.ca"},
+    {name = "Peter Smith", email = "smith.peter.902@gmail.com"},
+    {name = "Mark Gieles", email = "m.gieles@surrey.ac.uk"},
+    {name = "Miklos Peuten", email = "m.peuten@surrey.ac.uk"},
+]
+readme = "README.md"
+requires-python = ">=3.8"
+keywords = ["ssptools"]
+license = {file = "LICENSE"}
+dependencies = [
+    "numpy",
+    "scipy",
+]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Astronomy",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+]
+
+[project.urls]
+# documentation = "https://ssptools.readthedocs.io"
+repository = "https://github.com/SMU-clusters/ssptools.git"
+
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
