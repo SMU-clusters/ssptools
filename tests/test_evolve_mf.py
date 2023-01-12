@@ -21,7 +21,7 @@ class TestHelperMethods:
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        emf = evolve_mf.evolve_mf(**DEFAULT_KWARGS)
+        emf = evolve_mf.EvolvedMF(**DEFAULT_KWARGS)
 
     # ----------------------------------------------------------------------
     # Testing computation of t_ms lifetime
@@ -155,7 +155,7 @@ class TestBHEvolution:
 
         # Results not actually reliant on this evolution, just need the object
         kw = self.emf_kw | {'vesc': vesc, 'natal_kicks': True}
-        emf = evolve_mf.evolve_mf(**kw)
+        emf = evolve_mf.EvolvedMF(**kw)
 
         Mf, Nf, _ = emf._natal_kick_BH(Mi, Ni)
 
@@ -173,7 +173,7 @@ class TestBHEvolution:
     def test_natal_kick_total(self, Mi, Ni, vesc, expected):
 
         kw = self.emf_kw | {'vesc': vesc, 'natal_kicks': True}
-        emf = evolve_mf.evolve_mf(**kw)
+        emf = evolve_mf.EvolvedMF(**kw)
 
         _, _, ejected = emf._natal_kick_BH(Mi, Ni)
 
@@ -183,7 +183,7 @@ class TestBHEvolution:
     # Test BH dynamical ejection routines
     # ----------------------------------------------------------------------
 
-    base_emf = evolve_mf.evolve_mf(**emf_kw)
+    base_emf = evolve_mf.EvolvedMF(**emf_kw)
 
     @pytest.mark.parametrize(
         'M_eject, expected',
@@ -239,7 +239,7 @@ class TestDerivatives:
     )
     def test_sev(self, y, t, expected):
 
-        emf = evolve_mf.evolve_mf(**self.emf_kw)
+        emf = evolve_mf.EvolvedMF(**self.emf_kw)
 
         ydot = emf._derivs_sev(t, y)
         assert ydot == pytest.approx(expected)
@@ -264,7 +264,7 @@ class TestDerivatives:
     def test_esc(self, y, t, expected):
 
         kw = self.emf_kw | {'Ndot': -10}
-        emf = evolve_mf.evolve_mf(**kw)
+        emf = evolve_mf.EvolvedMF(**kw)
 
         ydot = emf._derivs_esc(t, y)
         assert ydot == pytest.approx(expected)

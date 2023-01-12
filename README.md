@@ -4,7 +4,7 @@
 
 ### Simple Stellar Population Tools
 
-Provides access to the `evolve_mf` class, which evolves an arbitrary 3-component
+Provides access to the `EvolvedMF` class, which evolves an arbitrary 3-component
 power law initial mass function (IMF) to a binned present-day mass function
 (PDMF) at any given set of ages, and computes the numbers and masses of stars
 and remnants in each mass bin.

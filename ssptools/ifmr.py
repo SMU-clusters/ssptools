@@ -9,6 +9,9 @@ import numpy as np
 from scipy.interpolate import UnivariateSpline
 
 
+__all__ = ["IFMR", "get_data"]
+
+
 bounds = collections.namedtuple('bounds', ('lower', 'upper'))
 
 _ROOT = pathlib.Path(__file__).parent

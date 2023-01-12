@@ -10,7 +10,10 @@ from .ifmr import IFMR, get_data
 # TODO optionally support units for some things
 
 
-class evolve_mf:
+__all__ = ['EvolvedMF']
+
+
+class EvolvedMF:
     r'''Evolve an IMF to a present-day mass function at a given age
 
     Evolves an arbitrary N-component power law initial mass function (IMF)
