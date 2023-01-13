@@ -193,7 +193,7 @@ class EvolvedMF:
         self.FeH = FeH
 
         if Ndot > 0:
-            raise ValueError("'Ndot' msut be less than 0")
+            raise ValueError("'Ndot' must be less than 0")
 
         # Initial-Final mass relations
         self.IFMR = IFMR(FeH)
