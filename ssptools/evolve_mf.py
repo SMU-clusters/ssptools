@@ -160,6 +160,10 @@ class EvolvedMF:
         return self.M / self.N
 
     @property
+    def bin_widths(self):
+        return np.diff(self.mes[-1])
+
+    @property
     def types(self):
         cs = self.Ns[-1] > 10 * self.Nmin
         cr = self.Nr[-1] > 10 * self.Nmin
@@ -168,6 +172,14 @@ class EvolvedMF:
         tr = self.rem_types[cr]
 
         return np.r_[ts, tr]
+
+    @property
+    def nms(self):
+        return (self.Ns[-1] > 10 * self.Nmin).sum()
+
+    @property
+    def nmr(self):
+        return (self.Nr[-1] > 10 * self.Nmin).sum()
 
     def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot,
                  N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
