@@ -197,7 +197,7 @@ class EvolvedMF:
 
         # Supplied parameters
         self.tcc = tcc
-        self.tout = tout
+        self.tout = np.atleast_1d(tout)
         self.Ndot = Ndot
         self.NS_ret = NS_ret
         self.BH_ret_int = BH_ret_int
@@ -779,7 +779,7 @@ class EvolvedMF:
 
             if ti in self.tout:
 
-                iout = self.tout.index(ti)
+                iout = np.where(self.tout == ti)[0][0]
 
                 # ----------------------------------------------------------
                 # Extract the N, M and alphas for stars and remnants
