@@ -1,0 +1,34 @@
+name: Tests
+
+on:
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - 'docs/**'
+      
+  pull_request:
+    branches: [ master ]
+    paths-ignore:
+      - 'docs/**'
+
+jobs:
+  test:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+    - name: Install dependencies
+      run: |
+        sudo apt-get install gsl-bin libgsl0-dev build-essential
+        python -m pip install --upgrade pip
+        pip install wheel
+        pip install flake8 pytest
+        pip install -e .
+    - name: Test with pytest
+      run: |
+        python -m pytest
