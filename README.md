@@ -1,7 +1,7 @@
 # SSPTools
 
 [![MIT license](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/pjs902/ssptools/blob/master/LICENSE)
-
+[![Tests](https://github.com/SMU-clusters/ssptools/actions/workflows/tests.yml/badge.svg)](https://github.com/SMU-clusters/ssptools/actions/workflows/tests.yml)
 ### Simple Stellar Population Tools
 
 Provides access to the `EvolvedMF` class, which evolves an arbitrary 3-component
