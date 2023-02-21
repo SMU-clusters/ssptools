@@ -295,7 +295,7 @@ class EvolvedMF:
             Upper and lower bound of given mass bin or range
         '''
 
-        a = np.asarray(a)
+        a = np.asarray(a, dtype=float)
         res = np.asarray((m2 ** (a + k) - m1 ** (a + k)) / (a + k))  # a != k
 
         if (casemask := np.asarray(-a == k)).any():
