@@ -265,6 +265,7 @@ class EvolvedMF:
 
         self._evolve()
 
+    @np.errstate(invalid='ignore')
     def _Pk(self, a, k, m1, m2):
         r'''Convenience function for computing quantities related to IMF
 
@@ -293,11 +294,14 @@ class EvolvedMF:
         m1, m2 : float
             Upper and lower bound of given mass bin or range
         '''
-        try:
-            return (m2 ** (a + k) - m1 ** (a + k)) / (a + k)
 
-        except ZeroDivisionError:
-            return np.log(m2 / m1)
+        a = np.asarray(a, dtype=float)
+        res = np.asarray((m2 ** (a + k) - m1 ** (a + k)) / (a + k))  # a != k
+
+        if (casemask := np.asarray(-a == k)).any():
+            res[casemask] = np.log(m2 / m1)[casemask]
+
+        return res
 
     def _set_imf(self, m_break, a, nbin, N0):
         '''Initialize the mass bins based on the IMF and initial number of stars

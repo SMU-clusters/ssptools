@@ -111,7 +111,7 @@ class TestHelperMethods:
     # ----------------------------------------------------------------------
 
     @pytest.mark.parametrize('k', [1., 1.5, 2.])
-    @pytest.mark.parametrize('a', [-1., -0.5, 1.0])
+    @pytest.mark.parametrize('a', [-2, -1., -0.5, 1.0])
     def test_Pk(self, a, k):
         from scipy.integrate import quad
 
