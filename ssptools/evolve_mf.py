@@ -128,6 +128,11 @@ class EvolvedMF:
         Array containing the individual mass in all non-empty mass bins,
         including both stars and remnants, based on the final age given by tout.
 
+    bin_widths : ndarray
+        Array containing the width of all non-empty mass bins,
+        including both stars and remnants, based on the final age given by tout.
+        Equal to `np.diff(mes)`.
+
     types : ndarray
         Array of 2-character strings representing the object type of the
         corresponding bins of the M, N and m properties. "MS" = main sequence
@@ -161,7 +166,15 @@ class EvolvedMF:
 
     @property
     def bin_widths(self):
-        return np.diff(self.mes[-1])
+        bw = np.diff(self.mes[-1])
+
+        cs = self.Ns[-1] > 10 * self.Nmin
+        bws = bw[cs]
+
+        cr = self.Nr[-1] > 10 * self.Nmin
+        bwr = bw[cr]
+
+        return np.r_[bws, bwr]
 
     @property
     def types(self):
