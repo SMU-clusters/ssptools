@@ -250,6 +250,7 @@ class MassBins:
                                      nbin_WD, nbin_NS, nbin_BH])  # M remnants
 
         self.nbin = star_classes(MS=nbin_MS, WD=nbin_WD, NS=nbin_NS, BH=nbin_BH)
+        self.nbin_tot = sum(self.nbin)
 
         self.bins = star_classes(MS=bins_MS, WD=bins_WD, NS=bins_NS, BH=bins_BH)
 
@@ -307,10 +308,21 @@ class MassBins:
 
             return N, M
 
+    def blanks(self, value=0., *, packed=True):
+        '''return arrays of correct shape for y or y' all set to zeros (or
+        something else). Meant for use as like initial derivatives and stuff'''
+
+        if value == 0.:
+            full = np.zeros(self.nbin_tot)  # Much faster
+        else:
+            full = np.full(self.nbin_tot, value)
+
+        return full if packed else self.unpack_values(full)
+
     def pack_values(self, Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh):
         '''Put a bunch of arrays into the correct packed format for y or y'
         Mostly a convenience function for packing derivatives, allowing to
-        supply by keyword things out of order or from various lists
+        supply by keyword things out of order or from various lists using *
         '''
         return np.r_[Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh]
 

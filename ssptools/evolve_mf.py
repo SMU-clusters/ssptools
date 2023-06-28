@@ -341,9 +341,11 @@ class EvolvedMF:
         '''Derivatives relevant to mass changes due to stellar evolution'''
 
         # Setup derivative bins
-        Nj_dot_s, Nj_dot_r = np.zeros(self.nbin), np.zeros(self.nbin)
-        Mj_dot_r = np.zeros(self.nbin)
-        aj_dot_s = np.zeros(self.nbin)
+        # Nj_dot_s, Nj_dot_r = np.zeros(self.nbin), np.zeros(self.nbin)
+        # Mj_dot_r = np.zeros(self.nbin)
+        # aj_dot_s = np.zeros(self.nbin)
+        Ns, alpha, Nr, Mr = self.massbins.unpack_values(y, grouped_rem=True)
+        dNs, dalpha, dNr, dMr = self.massbins.blank(grouped_rem=True)
 
         # Apply only if this time is atleast later than the earliest tms
         if t > self.tms_u[-1]:
@@ -352,16 +354,22 @@ class EvolvedMF:
             isev = np.where(t > self.tms_u)[0][0]
 
             # Find bin edges of turn-off bin
-            m1 = self.me[isev]
+            # m1 = self.me[isev]
+            # mto = self.compute_mto(t)
+            # Nj = y[isev]
+            m1 = self.massbins.bins.MS.lower[isev]
             mto = self.compute_mto(t)
-            Nj = y[isev]
+            Nj = Ns[isev]
+
+            logging.debug(f'{m1=}, {mto=}, {Nj=}')
 
             # Avoid "hitting" the bin edge
             # i.e. when evolving with tout: mto > m1, otherwise: mto == m1
             if mto > m1 and Nj > self.Nmin:
 
                 # Two parameters defining the bin
-                alphaj = y[self.nbin + isev]
+                # alphaj = y[self.nbin + isev]
+                alphaj = alpha[isev]
 
                 # The normalization constant
                 # TODO deal with the constant divide-by-zero warning here
@@ -372,6 +380,7 @@ class EvolvedMF:
 
             else:
                 dNdm = 0
+                # TODO just break???
 
             # Compute the full dN/dt = dN/dm * dm/dt
             a = self._tms_constants
@@ -381,7 +390,8 @@ class EvolvedMF:
             dNdt = -dNdm * dmdt
 
             # Fill in star derivatives (alphaj remains constant for _derivs_sev)
-            Nj_dot_s[isev] = dNdt
+            # Nj_dot_s[isev] = dNdt
+            dNs[isev] = dNdt
 
             # Find remnant mass and which bin they go into
             m_rem, cls_rem = self.IFMR.predict(mto), self.IFMR.predict_type(mto)
@@ -390,25 +400,28 @@ class EvolvedMF:
             if m_rem > 0:
 
                 # Find bin based on lower bin edge (must be careful later)
-                irem = np.where(m_rem > self.me)[0][-1]
+                # irem = np.where(m_rem > self.me)[0][-1]
+                irem = self.massbins.determine_index(m_rem, cls_rem)
 
                 # Compute Remnant retention fractions based on remnant type
 
-                if cls_rem == 'WD':
-                    frem = 1.
-
-                elif cls_rem == 'BH':
-                    frem = self.BH_ret_int
-
-                # elif cls_rem == 'NS':
-                else:
-                    frem = self.NS_ret
+                # if cls_rem == 'WD':
+                #     frem = 1.
+                # elif cls_rem == 'BH':
+                #     frem = self.BH_ret_int
+                # # elif cls_rem == 'NS':
+                # else:
+                #     frem = self.NS_ret
+                frem = self._frem[cls_rem]
 
                 # Fill in remnant derivatives
-                Nj_dot_r[irem] = -dNdt * frem
-                Mj_dot_r[irem] = -m_rem * dNdt * frem
+                # Nj_dot_r[irem] = -dNdt * frem
+                # Mj_dot_r[irem] = -m_rem * dNdt * frem
+                getattr(dNr, cls_rem)[irem] = -dNdt * frem
+                getattr(dMr, cls_rem)[irem] = -m_rem * dNdt * frem
 
-        return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
+        # return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
+        return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
 
     def _derivs_esc(self, t, y):
         '''Derivatives relevant to mass loss due to escaping low-mass stars'''
