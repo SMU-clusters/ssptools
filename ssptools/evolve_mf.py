@@ -6,6 +6,8 @@ from scipy.integrate import ode
 from scipy.interpolate import interp1d, UnivariateSpline
 
 from .ifmr import IFMR, get_data
+from .masses import MassBins, Pk
+
 
 # TODO optionally support units for some things
 
@@ -278,122 +280,6 @@ class EvolvedMF:
 
         self._evolve()
 
-    @np.errstate(invalid='ignore')
-    def _Pk(self, a, k, m1, m2):
-        r'''Convenience function for computing quantities related to IMF
-
-        ..math ::
-            \begin{align}
-                P_k(\alpha_j,\ m_{j,1},\ m_{j,2})
-                    &= \int_{m_{j,1}}^{m_{j,2}} m^{\alpha_j + k - 1}
-                        \ \mathrm{d}m \\
-                    &= \begin{cases}
-                        \frac{m_{j,2}^{\alpha_j+k} - m_{j,1}^{\alpha_j+k} }
-                             {\alpha_j + k},
-                             \quad \alpha_j + k \neq 0 \\
-                        \ln{\left(\frac{m_{j,2}}{m_{j,1}}\right)},
-                            \quad \alpha_j + k = 0
-                    \end{cases}
-            \end{align}
-
-        Parameters
-        ----------
-        a : float
-            Mass function power law slope effective between m1 and m2
-
-        k : int
-            k-index
-
-        m1, m2 : float
-            Upper and lower bound of given mass bin or range
-        '''
-
-        a = np.asarray(a, dtype=float)
-        res = np.asarray((m2 ** (a + k) - m1 ** (a + k)) / (a + k))  # a != k
-
-        if (casemask := np.asarray(-a == k)).any():
-            res[casemask] = np.log(m2 / m1)[casemask]
-
-        return res
-
-    def _set_imf(self, m_break, a, nbin, N0):
-        '''Initialize the mass bins based on the IMF and initial number of stars
-
-        Modifies in place a number of attributes of this class, related to the
-        initial setup of the output quantities, including nbin, me, mes0,
-        alphas0, Ns0, Ms0, ms0, Nr0, Mr0, mr0
-
-        Parameters
-        ----------
-        m_break : list of float
-            Break-masses (including outer bounds; size N+1)
-
-        a : list of float
-            mass function slopes (size N)
-
-        nbin : list of int
-            Number of mass bins in each regime (size N)
-
-        N0 : int
-            Total initial number of stars
-        '''
-
-        # Total number of mass bins
-        self.nbin = np.sum(nbin)
-
-        # ------------------------------------------------------------------
-        # Compute normalization factors A_j
-        # ------------------------------------------------------------------
-
-        A3 = (
-            self._Pk(a[2], 1, m_break[2], m_break[3])
-            + (m_break[1] ** (a[1] - a[0])
-               * self._Pk(a[0], 1, m_break[0], m_break[1]))
-            + (m_break[2] ** (a[2] - a[1])
-               * self._Pk(a[1], 1, m_break[1], m_break[2]))
-        ) ** (-1)
-
-        A2 = A3 * m_break[2] ** (a[2] - a[1])
-        A1 = A2 * m_break[1] ** (a[1] - a[0])
-
-        A = N0 * np.repeat([A1, A2, A3], nbin)
-
-        # ------------------------------------------------------------------
-        # Set mass bin edges
-        # Bins are logspaced evenly between the break masses, with the
-        # number of bins specified by nbin. This spacing is thus *not*
-        # consistent throughtout entire mass range.
-        # ------------------------------------------------------------------
-
-        # TODO equal-log-space between bins, would single logspace be better?
-        me1 = np.geomspace(m_break[0], m_break[1], nbin[0] + 1)
-        me2 = np.geomspace(m_break[1], m_break[2], nbin[1] + 1)
-        me3 = np.geomspace(m_break[2], m_break[3], nbin[2] + 1)
-
-        # Combine bin edges, avoiding repetition
-        self.me = np.r_[me1, me2[1:], me3[1:]]
-
-        # Set special edges for stars because stellar evolution affects this
-        self.mes0 = np.copy(self.me)
-
-        # ------------------------------------------------------------------
-        # Set the initial Nj and mj for all bins (stars and remnants)
-        # ------------------------------------------------------------------
-
-        # Expand array of IMF slopes to all mass bins
-        alpha = np.repeat(a, nbin)
-        self.alphas0 = alpha
-
-        # Set initial star bins based on IMF
-        self.Ns0 = A * self._Pk(alpha, 1, self.me[0:-1], self.me[1:])
-        self.Ms0 = A * self._Pk(alpha, 2, self.me[0:-1], self.me[1:])
-        self.ms0 = self.Ms0 / self.Ns0
-
-        # Set all initial remnant bins to zero
-        self.Nr0 = np.zeros(self.nbin)
-        self.Mr0 = np.zeros(self.nbin)
-        self.mr0 = np.zeros(self.nbin)
-
     def compute_tms(self, mi):
         '''Compute main-sequence lifetime for a given mass `mi`'''
         a = self._tms_constants
@@ -471,7 +357,7 @@ class EvolvedMF:
 
                 # The normalization constant
                 # TODO deal with the constant divide-by-zero warning here
-                Aj = Nj / self._Pk(alphaj, 1, m1, mto)
+                Aj = Nj / Pk(alphaj, 1, m1, mto)
 
                 # Get the number of turn-off stars per unit of mass
                 dNdm = Aj * mto ** alphaj
@@ -559,8 +445,8 @@ class EvolvedMF:
         m1 = mes[0:-1]
         m2 = mes[1:]
 
-        P1 = self._Pk(alphas, 1, m1, m2)
-        P15 = self._Pk(alphas, 1.5, m1, m2)
+        P1 = Pk(alphas, 1, m1, m2)
+        P15 = Pk(alphas, 1.5, m1, m2)
 
         # Compute relevant rate-of-change integrals I_j, J_j
         c = (mr < self.md) & (m1 < m2)
@@ -812,8 +698,8 @@ class EvolvedMF:
                     isev = np.where(self.me > self.compute_mto(ti))[0][0] - 1
                     mes[isev + 1] = self.compute_mto(ti)
 
-                As = Ns / self._Pk(alphas, 1, mes[0:-1], mes[1:])
-                Ms = As * self._Pk(alphas, 2, mes[0:-1], mes[1:])
+                As = Ns / Pk(alphas, 1, mes[0:-1], mes[1:])
+                Ms = As * Pk(alphas, 2, mes[0:-1], mes[1:])
 
                 # Extract remnants (copies due to below ejections)
                 Nr = sol.y[2 * nb:3 * nb].copy()
