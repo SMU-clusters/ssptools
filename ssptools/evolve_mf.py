@@ -73,6 +73,12 @@ class EvolvedMF:
         Initial cluster escape velocity, in km/s, for use in the computation of
         BH natal kick effects. Defaults to 90 km/s
 
+    md : float, optional
+        Depletion mass, below which stars are preferentially disrupted during
+        the stellar escape derivatives.
+        The default 1.2 is based on Lamers et al. (2013) and shouldn't be
+        changed unless you know what you're doing.
+
     Attributes
     ----------
 
@@ -198,13 +204,7 @@ class EvolvedMF:
 
     def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot,
                  N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
-                 natal_kicks=False, vesc=90):
-
-        # ------------------------------------------------------------------
-        # Initialise the mass bins given the power-law IMF slopes and bins
-        # ------------------------------------------------------------------
-
-        self._set_imf(m_breaks, a_slopes, nbins, N0)
+                 natal_kicks=False, vesc=90, binning_method='default', md=1.2):
 
         # ------------------------------------------------------------------
         # Set various other parameters
@@ -214,9 +214,12 @@ class EvolvedMF:
         self.tcc = tcc
         self.tout = np.atleast_1d(tout)
         self.Ndot = Ndot
+
         self.NS_ret = NS_ret
         self.BH_ret_int = BH_ret_int
         self.BH_ret_dyn = BH_ret_dyn
+        self._frem = {'WD': 1., 'NS': NS_ret, 'BH': BH_ret_int}
+
         self.FeH = FeH
 
         if Ndot > 0:
@@ -228,9 +231,14 @@ class EvolvedMF:
         # Minimum of stars to call a bin "empty"
         self.Nmin = 0.1
 
-        # Depletion mass: stars below this mass are preferentially disrupted
-        # Hardcoded for now, perhaps vary, fit on N-body?
-        self.md = 1.2
+        self.md = md
+
+        # ------------------------------------------------------------------
+        # Initialise the mass bins given the power-law IMF slopes and bins
+        # ------------------------------------------------------------------
+
+        self.massbins = MassBins(m_breaks, a_slopes, nbins, N0, self.IFMR,
+                                 binning_method=binning_method)
 
         # ------------------------------------------------------------------
         # Setup lifetime approximations and compute t_ms of all bin edges
