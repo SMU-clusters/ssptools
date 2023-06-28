@@ -289,7 +289,7 @@ class MassBins:
         alpha = np.repeat(a, self.nbin.MS)
 
         # Set initial star bins based on IMF
-        Ns = A * Pk(alpha, 1, self.bins.MS.lower, self.bins.MS.upper)
+        Ns = A * Pk(alpha, 1, *self.bins.MS)
 
         # Set all initial remnant bins to zero
         Nwd, Mwd = np.zeros(self.nbin.WD), np.zeros(self.nbin.WD)
@@ -301,7 +301,7 @@ class MassBins:
 
         else:
             # this way so wouldn't have to recompute Ms from typical unpacked
-            Ms = A * Pk(alpha, 2, self.bins.MS.lower, self.bins.MS.upper)
+            Ms = A * Pk(alpha, 2, *self.bins.MS)
 
             N = star_classes(MS=Ns, WD=Nwd, NS=Nns, BH=Nbh)
             M = star_classes(MS=Ms, WD=Mwd, NS=Mns, BH=Mbh)
@@ -354,3 +354,19 @@ class MassBins:
         ind = np.flatnonzero(massbins.lower <= mass)[-1]
 
         return ind
+
+    def turned_off_bins(self, mto):
+        '''return a version of the MS bins with the upper bounds of the turn
+        off mass bin adjusted to mto, which is required sometimes to basically
+        spoof the fact that, in that bin, the mass above this mto will have
+        actually been entirely converted to remnants. But, because of binning,
+        we can't simulate that intra-bins and so need to functionally
+        approximate it for use in some functions, where the mean mass of the
+        bin would actually be lowered.
+        '''
+        isev = self.determine_index(mto, 'MS')
+
+        low, up = self.bins.MS.lower.copy(), self.bins.MS.upper.copy()
+        up[isev] = mto
+
+        return mbin(low, up)

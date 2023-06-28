@@ -426,67 +426,83 @@ class EvolvedMF:
     def _derivs_esc(self, t, y):
         '''Derivatives relevant to mass loss due to escaping low-mass stars'''
 
-        nb = self.nbin
-        md = self.md
-        Ndot = self.Ndot
+        # nb = self.nbin
+        md, Ndot = self.md, self.Ndot
 
-        # Setup derivative bins
-        Nj_dot_s, aj_dot_s = np.zeros(nb), np.zeros(nb)
-        Nj_dot_r, Mj_dot_r = np.zeros(nb), np.zeros(nb)
+        # # Setup derivative bins
+        # Nj_dot_s, aj_dot_s = np.zeros(nb), np.zeros(nb)
+        # Nj_dot_r, Mj_dot_r = np.zeros(nb), np.zeros(nb)
 
-        # Pull out individual arrays from y
-        Ns = np.abs(y[0:nb])
-        alphas = y[nb:2 * nb]
-        Nr = np.abs(y[2 * nb:3 * nb])
-        Mr = np.abs(y[3 * nb:4 * nb])
+        # # Pull out individual arrays from y
+        # Ns = np.abs(y[0:nb])
+        # alphas = y[nb:2 * nb]
+        # Nr = np.abs(y[2 * nb:3 * nb])
+        # Mr = np.abs(y[3 * nb:4 * nb])
+        Ns, alpha, Nr, Mr = self.massbins.unpack_values(y, grouped_rem=True)
+        dNs, dalpha, dNr, dMr = self.massbins.blank(grouped_rem=True)
 
         # If core collapsed, use different, simpler, algorithm
         if t < self.tcc:
-            N_sum = Ns.sum() + Nr.sum()
-            Nj_dot_s += Ndot * Ns / N_sum
-            sel = Nr > 0
-            Nj_dot_r[sel] += Ndot * Nr[sel] / N_sum
-            Mj_dot_r[sel] += (Ndot * Nr[sel] / N_sum) * (Mr[sel] / Nr[sel])
-            return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
-        # Determine mass of remnants
-        mr = 0.5 * (self.me[1:] + self.me[0:-1])
-        c = Nr > 0
-        mr[c] = Mr[c] / Nr[c]
+            N_sum = np.sum(Ns) + np.sum(np.r_[Nr])
+            dNs += Ndot * Ns / N_sum
 
-        # Setup edges for stars accounting for mto
-        mes = np.copy(self.me)
+            # dNr[sel] += Ndot * Nr[sel] / N_sum
+            # dMr[sel] += (Ndot * Nr[sel] / N_sum) * (Mr[sel] / Nr[sel])
+            for c in range(len(Nr)):  # Each remnant class
+                sel = Nr[c] > 0
+                mr = Mr[c][sel] / Nr[c][sel]
+                dNr[c][sel] += Ndot * Nr[c][sel] / N_sum
+                dMr[c][sel] += mr * Ndot * Nr[c][sel] / N_sum
 
-        # Set all bins above current turn-off to this mto
-        if t > self.tms_u[-1]:
-            isev = np.where(mes > self.compute_mto(t))[0][0]
-            mes[isev] = self.compute_mto(t)
+            return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
 
-        # Helper mass and normalization quantities
-        m1 = mes[0:-1]
-        m2 = mes[1:]
+        # Stellar Integrals
 
-        P1 = Pk(alphas, 1, m1, m2)
-        P15 = Pk(alphas, 1.5, m1, m2)
+        mto = self.compute_mto(t)
 
-        # Compute relevant rate-of-change integrals I_j, J_j
-        c = (mr < self.md) & (m1 < m2)
+        bins_MS = self.massbins.turned_off_bins(mto)
 
-        Is = Ns[c] * (1 - md ** (-0.5) * P15[c] / P1[c])
-        Ir = Nr[c] * (1 - np.sqrt(mr[c] / md))
-        Jr = Mr[c] * (1 - np.sqrt(mr[c] / md))
+        P1 = Pk(alpha, 1, *bins_MS)
+        P15 = Pk(alpha, 1.5, *bins_MS)
+        P2 = Pk(alpha, 2, *bins_MS)
 
-        # Compute normalization constant B
-        B = Ndot / sum(Is + Ir)
+        ms = P2 / P1
+        depl_mask = ms < md
 
-        # Compute rates of change for all four quantities (cumulative per bin)
-        Nj_dot_s[c] += B * Is
-        aj_dot_s[c] += (B * ((m1[c] / md) ** 0.5 - (m2[c] / md) ** 0.5)
-                        / np.log(m2[c] / m1[c]))
-        Nj_dot_r[c] += B * Ir
-        Mj_dot_r[c] += B * Jr
+        Is = (Ns * (1 - md ** (-0.5) * (P15 / P1)))[depl_mask]
 
-        return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
+        # Remnant integrals
+
+        Ir, Jr = Nr._make((None,) * len(Nr))  # Dummy initalized `rem_classes`
+        for c in range(len(Nr)):  # Each remnant class
+
+            rem_mask = depl_mask & (Nr[c] > 0)
+
+            mr = Mr[c][rem_mask] / Nr[c][rem_mask]
+
+            Ir[c] = Nr[c][rem_mask] * (1 - np.sqrt(mr / md))
+            Jr[c] = Mr[c][rem_mask] * (1 - np.sqrt(mr / md))
+
+        # Normalization
+
+        B = Ndot / (np.sum(Is) + np.sum(np.r_[Ir]))
+
+        # Derivatives
+
+        dNs[depl_mask] += B * Is
+
+        dalpha[depl_mask] += (
+            B * ((bins_MS.lower[depl_mask] / md) ** 0.5
+                 - (bins_MS.upper[depl_mask] / md) ** 0.5)
+            / np.log(bins_MS.upper[depl_mask] / bins_MS.lower[depl_mask])
+        )
+
+        for c in range(len(Nr)):  # Each remnant class
+            dNr[c][rem_mask] += B * Ir[c]
+            dMr[c][rem_mask] += B * Jr[c]
+
+        return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
 
     def _get_retention_frac(self, fb, vesc):
         '''Compute BH natal-kick retention fraction'''
