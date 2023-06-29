@@ -127,8 +127,8 @@ class MassBins:
 
         # List of bins between each break mass
         else:
-            nbin_MS = np.sum(nbin_MS)
             _nbin_MS_each = nbin_MS
+            nbin_MS = np.sum(nbin_MS)
 
         # ------------------------------------------------------------------
         # Setup stellar mass bins (based entirely on edges)
@@ -141,7 +141,7 @@ class MassBins:
             bin_sides = np.r_[tuple(
                 np.geomspace(m_break[i], m_break[i + 1],
                              _nbin_MS_each[i] + 1)[(i > 0):]
-                for i in range(len(nbins))
+                for i in range(len(_nbin_MS_each))
             )]
 
         elif binning_method in ('linear_split', 'split_linear'):
@@ -149,7 +149,7 @@ class MassBins:
             bin_sides = np.r_[tuple(
                 np.linspace(m_break[i], m_break[i + 1],
                             _nbin_MS_each[i] + 1)[(i > 0):]
-                for i in range(len(nbins))
+                for i in range(len(_nbin_MS_each))
             )]
 
         # TODO unsure how to implement uniform spaces while still hitting breaks
@@ -250,7 +250,7 @@ class MassBins:
                                      nbin_WD, nbin_NS, nbin_BH])  # M remnants
 
         self.nbin = star_classes(MS=nbin_MS, WD=nbin_WD, NS=nbin_NS, BH=nbin_BH)
-        self.nbin_tot = sum(self.nbin)
+        self.nbin_tot = np.r_[self.nbin].sum()
 
         self.bins = star_classes(MS=bins_MS, WD=bins_WD, NS=bins_NS, BH=bins_BH)
 
