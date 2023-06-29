@@ -13,7 +13,7 @@ star_classes = namedtuple('star_classes', ('MS',) + rem_classes._fields)
 
 
 @np.errstate(invalid='ignore')
-def Pk(self, a, k, m1, m2):
+def Pk(a, k, m1, m2):
     r'''Convenience function for computing quantities related to IMF
 
     ..math ::
@@ -123,11 +123,11 @@ class MassBins:
 
         # Single number divided equally between break masses
         if isinstance(nbin_MS, int):
-            _nbin_MS_each = _divide_bin_sizes(nbins, N_MS_breaks)
+            self._nbin_MS_each = _divide_bin_sizes(nbins, N_MS_breaks)
 
         # List of bins between each break mass
         else:
-            _nbin_MS_each = nbin_MS
+            self._nbin_MS_each = nbin_MS
             nbin_MS = np.sum(nbin_MS)
 
         # ------------------------------------------------------------------
@@ -140,16 +140,16 @@ class MassBins:
             # one-liner required for different Neach and no repeating breaks
             bin_sides = np.r_[tuple(
                 np.geomspace(m_break[i], m_break[i + 1],
-                             _nbin_MS_each[i] + 1)[(i > 0):]
-                for i in range(len(_nbin_MS_each))
+                             self._nbin_MS_each[i] + 1)[(i > 0):]
+                for i in range(len(self._nbin_MS_each))
             )]
 
         elif binning_method in ('linear_split', 'split_linear'):
 
             bin_sides = np.r_[tuple(
                 np.linspace(m_break[i], m_break[i + 1],
-                            _nbin_MS_each[i] + 1)[(i > 0):]
-                for i in range(len(_nbin_MS_each))
+                            self._nbin_MS_each[i] + 1)[(i > 0):]
+                for i in range(len(self._nbin_MS_each))
             )]
 
         # TODO unsure how to implement uniform spaces while still hitting breaks
@@ -242,12 +242,21 @@ class MassBins:
         # ------------------------------------------------------------------
         # Setup the "blueprint" for the packed values
         # The blueprint is an array of integers reflecting the slices in the
-        # packed `y` representing each component, to be used in `np.split(y)`
+        # packed `y` representing each component, to be used in `np.split(y)`.
+        # Splitting includes the last given index to the end, so the final
+        # nbin_BH should not be included in `_blueprint`, but is part of the
+        # total size of y
         # ------------------------------------------------------------------
 
         self._blueprint = np.cumsum([nbin_MS, nbin_MS,  # Ms, alphas
-                                     nbin_WD, nbin_NS, nbin_BH,  # N remnants
-                                     nbin_WD, nbin_NS, nbin_BH])  # M remnants
+                                     nbin_WD, nbin_NS, nbin_BH,  # N rem
+                                     nbin_WD, nbin_NS])  # , nbin_BH])  # M rem
+
+        self._ysize = self._blueprint[-1] + nbin_BH
+
+        # ------------------------------------------------------------------
+        # Save collections of useful attributes
+        # ------------------------------------------------------------------
 
         self.nbin = star_classes(MS=nbin_MS, WD=nbin_WD, NS=nbin_NS, BH=nbin_BH)
         self.nbin_tot = np.r_[self.nbin].sum()
@@ -279,14 +288,14 @@ class MassBins:
         A2 = A3 * mb[2] ** (a[2] - a[1])
         A1 = A2 * mb[1] ** (a[1] - a[0])
 
-        A = self.N0 * np.repeat([A1, A2, A3], self.nbin.MS)
+        A = self.N0 * np.repeat([A1, A2, A3], self._nbin_MS_each)
 
         # ------------------------------------------------------------------
         # Set the initial Nj and mj for all bins (stars and remnants)
         # ------------------------------------------------------------------
 
         # Expand array of IMF slopes to all mass bins
-        alpha = np.repeat(a, self.nbin.MS)
+        alpha = np.repeat(a, self._nbin_MS_each)
 
         # Set initial star bins based on IMF
         Ns = A * Pk(alpha, 1, *self.bins.MS)
@@ -313,9 +322,9 @@ class MassBins:
         something else). Meant for use as like initial derivatives and stuff'''
 
         if value == 0.:
-            full = np.zeros(self.nbin_tot)  # Much faster
+            full = np.zeros(self._ysize)  # Much faster
         else:
-            full = np.full(self.nbin_tot, value)
+            full = np.full(self._ysize, value)
 
         return full if packed else self.unpack_values(full)
 
