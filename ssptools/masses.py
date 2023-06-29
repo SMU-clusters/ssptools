@@ -360,7 +360,11 @@ class MassBins:
             massbins = getattr(self.bins, massbins)
 
         # Since mass bins always increasing, can look at only the lower bound
-        ind = np.flatnonzero(massbins.lower <= mass)[-1]
+        try:
+            ind = np.flatnonzero(massbins.lower <= mass)[-1]
+        except IndexError:
+            mssg = f"mass {mass} is outside of bounds of any bin in {massbins}"
+            raise ValueError(mssg)
 
         return ind
 
