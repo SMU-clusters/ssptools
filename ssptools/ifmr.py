@@ -78,9 +78,11 @@ class IFMR:
         # TODO polynomial starts misbehaving far above 0, but don't know where
         self.WD_mi = bounds(0.0, WD_m_max)
 
-        # TODO not technically correct due to possible bump in top of polynomial
-        #   Should really stop using polynomials and use interpolated grid.
-        self.WD_mf = bounds(0.0, self.predict(WD_m_max))
+        # Compute the max possible WD_mf by taking derivative of polynomial
+        WD_minmax = self._WD_spline.deriv().roots().real
+        WD_mf_max = self._WD_spline(WD_minmax[WD_minmax < WD_m_max]).max()
+
+        self.WD_mf = bounds(0.0, WD_mf_max)
         self.mWD_max = self.WD_mf.upper
 
         # ------------------------------------------------------------------
