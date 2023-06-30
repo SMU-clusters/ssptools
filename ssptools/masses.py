@@ -317,16 +317,23 @@ class MassBins:
 
             return N, M
 
-    def blanks(self, value=0., *, packed=True):
+    def blanks(self, value=0., extra_dims=None, *, packed=True, **kwargs):
         '''return arrays of correct shape for y or y' all set to zeros (or
-        something else). Meant for use as like initial derivatives and stuff'''
+        something else). Meant for use as like initial derivatives and stuff
+
+        shape will be (*extra_dims, y size)
+        '''
+
+        shape = (*([] if extra_dims is None else extra_dims), self._ysize)
 
         if value == 0.:
-            full = np.zeros(self._ysize)  # Much faster
+            full = np.zeros(shape=shape)  # Much faster
+        elif value == 'empty':
+            full = np.empty(shape=shape)
         else:
-            full = np.full(self._ysize, value)
+            full = np.full(shape=shape, fill_value=value)
 
-        return full if packed else self.unpack_values(full)
+        return full if packed else self.unpack_values(full, **kwargs)
 
     def pack_values(self, Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh):
         '''Put a bunch of arrays into the correct packed format for y or y'
@@ -337,7 +344,8 @@ class MassBins:
 
     def unpack_values(self, y, *, grouped_rem=False):
         '''Unpack a given y into the various arrays'''
-        Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh = np.split(y, self._blueprint)
+        Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh = np.split(y, self._blueprint,
+                                                           axis=-1)
 
         if grouped_rem:
             Nrem = rem_classes(WD=Nwd, NS=Nns, BH=Nbh)
