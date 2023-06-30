@@ -476,15 +476,19 @@ class EvolvedMF:
 
         # Remnant integrals
 
-        Ir, Jr = Nr._make((None,) * len(Nr))  # Dummy initalized `rem_classes`
+        *_, Ir, Jr = self.massbins.blanks(packed=False, grouped_rem=True)
         for c in range(len(Nr)):  # Each remnant class
 
-            rem_mask = depl_mask & (Nr[c] > 0)
+            rem_mask = Nr[c] > 0
 
             mr = Mr[c][rem_mask] / Nr[c][rem_mask]
 
-            Ir[c] = Nr[c][rem_mask] * (1 - np.sqrt(mr / md))
-            Jr[c] = Mr[c][rem_mask] * (1 - np.sqrt(mr / md))
+            Ir[c][rem_mask] = np.where(
+                mr < md, Nr[c][rem_mask] * (1 - np.sqrt(mr / md)), 0
+            )
+            Jr[c][rem_mask] = np.where(
+                mr < md, Mr[c][rem_mask] * (1 - np.sqrt(mr / md)), 0
+            )
 
         # Normalization
 
@@ -501,8 +505,11 @@ class EvolvedMF:
         )
 
         for c in range(len(Nr)):  # Each remnant class
-            dNr[c][rem_mask] += B * Ir[c]
-            dMr[c][rem_mask] += B * Jr[c]
+
+            rem_mask = Nr[c] > 0
+
+            dNr[c][rem_mask] += B * Ir[c][rem_mask]
+            dMr[c][rem_mask] += B * Jr[c][rem_mask]
 
         return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
 
