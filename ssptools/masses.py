@@ -236,8 +236,8 @@ class MassBins:
             nbin_NS = NS_mask.sum()  # Always = 1
 
             # Doesn't really matter, but keep the full bin width here
-            bins_NS = mbin(bins_MS.lower[BH_mask].copy(),
-                           bins_MS.upper[BH_mask].copy())
+            bins_NS = mbin(bins_MS.lower[NS_mask].copy(),
+                           bins_MS.upper[NS_mask].copy())
 
         # ------------------------------------------------------------------
         # Setup the "blueprint" for the packed values
@@ -380,6 +380,9 @@ class MassBins:
         isev = self.determine_index(mto, 'MS')
 
         low, up = self.bins.MS.lower.copy(), self.bins.MS.upper.copy()
-        up[isev] = mto
+
+        # skip if in last bin
+        if isev < self.nbin.MS - 1:
+            up[isev] = mto
 
         return mbin(low, up)
