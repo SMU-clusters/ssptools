@@ -295,8 +295,14 @@ class EvolvedMF:
 
     def compute_mto(self, t):
         '''Compute the turn-off mass for a given time `t` (inverse of tms)'''
+
         a = self._tms_constants
-        return (np.log(t / a[0]) / a[1]) ** (1 / a[2])
+
+        if t > a[0]:
+            return (np.log(t / a[0]) / a[1]) ** (1 / a[2])
+        else:
+            # Set NaN resulting from t<max (i.e. a0) to inf
+            return np.inf
 
     def _derivs(self, t, y):
         '''Main function for computing derivatives relevant to mass evolution

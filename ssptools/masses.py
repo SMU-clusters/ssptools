@@ -355,11 +355,13 @@ class MassBins:
         else:
             return Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh
 
-    def determine_index(self, mass, massbins):
+    def determine_index(self, mass, massbins, *, allow_overflow=False):
         '''determine the mbin index in the a given mass falls into in
         a `mbin` type set of mass bins
 
         mass bins are left-inclusive, i.e. [lower, upper)
+
+        currently only support one mass at a time, sorry
         '''
 
         # If a string labelling the class, get from stored bins
@@ -371,8 +373,14 @@ class MassBins:
         try:
             ind = np.flatnonzero(massbins.lower <= mass)[-1]
         except IndexError:
-            mssg = f"mass {mass} is outside of bounds of any bin in {massbins}"
+            mssg = f"mass {mass} is below lowest bound in {massbins}"
             raise ValueError(mssg)
+
+        # If this is the last bin, maybe check if its actually overflowing
+        if ind >= massbins.upper.size - 1:
+            if (massbins.upper[-1] <= mass) and allow_overflow is False:
+                mssg = f"mass {mass} is above highest bound in {massbins}"
+                raise ValueError(mssg)
 
         return ind
 
@@ -385,12 +393,16 @@ class MassBins:
         approximate it for use in some functions, where the mean mass of the
         bin would actually be lowered.
         '''
-        isev = self.determine_index(mto, 'MS')
 
         low, up = self.bins.MS.lower.copy(), self.bins.MS.upper.copy()
 
-        # skip if in last bin
-        if isev < self.nbin.MS - 1:
+        # Find the bin containing mto and adjust its upper bound only
+        try:
+            isev = self.determine_index(mto, 'MS')
             up[isev] = mto
+
+        # If the mto is above or below the min/max bounds, just ignore it
+        except ValueError:
+            pass
 
         return mbin(low, up)
