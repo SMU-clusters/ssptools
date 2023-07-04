@@ -340,20 +340,39 @@ class MassBins:
         Mostly a convenience function for packing derivatives, allowing to
         supply by keyword things out of order or from various lists using *
         '''
-        return np.r_[Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh]
+        # return np.r_[Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh]
+        inp_arrays = (Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh)
+        out = self.blanks('empty')
+        bp = [0, *self._blueprint, None]
+        for inp, i, j in zip(inp_arrays, bp[:-1], bp[1:]):
+            out[i:j] = inp
+
+        return out
 
     def unpack_values(self, y, *, grouped_rem=False):
         '''Unpack a given y into the various arrays'''
-        Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh = np.split(y, self._blueprint,
-                                                           axis=-1)
+        # Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh = np.split(y, self._blueprint,
+        #                                                    axis=-1)
+
+        # if grouped_rem:
+        #     Nrem = rem_classes(WD=Nwd, NS=Nns, BH=Nbh)
+        #     Mrem = rem_classes(WD=Mwd, NS=Mns, BH=Mbh)
+        #     return Ns, alpha, Nrem, Mrem
+
+        # else:
+        #     return Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh
+
+        bp = [0, *self._blueprint, None]
+        out = [y[..., i:j] for i, j in zip(bp[:-1], bp[1:])]
 
         if grouped_rem:
-            Nrem = rem_classes(WD=Nwd, NS=Nns, BH=Nbh)
-            Mrem = rem_classes(WD=Mwd, NS=Mns, BH=Mbh)
+            Ns, alpha = out[0:2]
+            Nrem = rem_classes(*out[2:5])
+            Mrem = rem_classes(*out[5:8])
             return Ns, alpha, Nrem, Mrem
 
         else:
-            return Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh
+            return out
 
     def determine_index(self, mass, massbins, *, allow_overflow=False):
         '''determine the mbin index in the a given mass falls into in
