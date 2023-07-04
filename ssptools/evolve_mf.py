@@ -362,8 +362,6 @@ class EvolvedMF:
             mto = self.compute_mto(t)
             Nj = Ns[isev]
 
-            logging.debug(f'{m1=}, {mto=}, {Nj=}')
-
             # Avoid "hitting" the bin edge
             # i.e. when evolving with tout: mto > m1, otherwise: mto == m1
             if mto > m1 and Nj > self.Nmin:
@@ -706,6 +704,9 @@ class EvolvedMF:
         self.Ms, self.ms = np.empty_like(self.Ns), np.empty_like(self.Ns)
         self.mr = self.Nr._make(np.empty_like(x) for x in self.Nr)
 
+        self.rem_types = np.repeat(self.massbins.nbin._fields[1:],
+                                   self.massbins.nbin[1:])
+
         # ------------------------------------------------------------------
         # Initialise ODE solver
         # ------------------------------------------------------------------
@@ -717,8 +718,6 @@ class EvolvedMF:
         sol = ode(self._derivs)
         sol.set_integrator("dopri5", max_step=1e12, atol=1e-5, rtol=1e-5)
         sol.set_initial_value(y0, t=t0)
-
-        logging.debug('Initialized ODE solver')
 
         # ------------------------------------------------------------------
         # Evolve
@@ -766,10 +765,6 @@ class EvolvedMF:
                 # # Extract remnants (copies due to below ejections)
                 # Nr = sol.y[2 * nb:3 * nb].copy()
                 # Mr = sol.y[3 * nb:4 * nb].copy()
-
-                logging.debug('Arrays extracted')
-                logging.debug(f'{Mr=}')
-                logging.debug(f'{Nr=}')
 
                 # TODO label the remnant types differently now
                 # # ----------------------------------------------------------
@@ -848,6 +843,3 @@ class EvolvedMF:
                     mr[rem_mask] = Mr[c][rem_mask] / Nr[c][rem_mask]
 
                     self.mr[c][iout, :] = mr
-
-                # # Remnant types
-                # self.rem_types = rem_types
