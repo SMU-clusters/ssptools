@@ -301,6 +301,7 @@ class EvolvedMF:
     def compute_mto(self, t):
         '''Compute the turn-off mass for a given time `t` (inverse of tms)'''
         a0, a1, a2 = self._tms_constants
+        # TODO has a lot of warnings due to always computing log, even if t<a0
         return np.where(t > a0, (np.log(t / a0) / a1) ** (1 / a2), np.inf)
 
     def _derivs(self, t, y):
@@ -346,9 +347,6 @@ class EvolvedMF:
         '''Derivatives relevant to mass changes due to stellar evolution'''
 
         # Setup derivative bins
-        # Nj_dot_s, Nj_dot_r = np.zeros(self.nbin), np.zeros(self.nbin)
-        # Mj_dot_r = np.zeros(self.nbin)
-        # aj_dot_s = np.zeros(self.nbin)
         Ns, alpha, Nr, Mr = self.massbins.unpack_values(y, grouped_rem=True)
         dNs, dalpha, dNr, dMr = self.massbins.blanks(packed=False,
                                                      grouped_rem=True)
@@ -359,20 +357,14 @@ class EvolvedMF:
             # Find out which mass bin is the current turn-off bin
             isev = np.where(t > self.tms_u)[0][0]
 
-            # Find bin edges of turn-off bin
-            # m1 = self.me[isev]
-            # mto = self.compute_mto(t)
-            # Nj = y[isev]
             m1 = self.massbins.bins.MS.lower[isev]
             mto = self.compute_mto(t)
             Nj = Ns[isev]
 
             # Avoid "hitting" the bin edge
-            # i.e. when evolving with tout: mto > m1, otherwise: mto == m1
             if mto > m1 and Nj > self.Nmin:
 
                 # Two parameters defining the bin
-                # alphaj = y[self.nbin + isev]
                 alphaj = alpha[isev]
 
                 # The normalization constant
@@ -394,7 +386,6 @@ class EvolvedMF:
             dNdt = -dNdm * dmdt
 
             # Fill in star derivatives (alphaj remains constant for _derivs_sev)
-            # Nj_dot_s[isev] = dNdt
             dNs[isev] = dNdt
 
             # Find remnant mass and which bin they go into
@@ -404,27 +395,15 @@ class EvolvedMF:
             if m_rem > 0:
 
                 # Find bin based on lower bin edge (must be careful later)
-                # irem = np.where(m_rem > self.me)[0][-1]
                 irem = self.massbins.determine_index(m_rem, cls_rem)
 
                 # Compute Remnant retention fractions based on remnant type
-
-                # if cls_rem == 'WD':
-                #     frem = 1.
-                # elif cls_rem == 'BH':
-                #     frem = self.BH_ret_int
-                # # elif cls_rem == 'NS':
-                # else:
-                #     frem = self.NS_ret
                 frem = self._frem[cls_rem]
 
                 # Fill in remnant derivatives
-                # Nj_dot_r[irem] = -dNdt * frem
-                # Mj_dot_r[irem] = -m_rem * dNdt * frem
                 getattr(dNr, cls_rem)[irem] = -dNdt * frem
                 getattr(dMr, cls_rem)[irem] = -m_rem * dNdt * frem
 
-        # return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
         return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
 
     def _derivs_esc(self, t, y):
@@ -433,15 +412,7 @@ class EvolvedMF:
         # nb = self.nbin
         md, Ndot = self.md, self.Ndot
 
-        # # Setup derivative bins
-        # Nj_dot_s, aj_dot_s = np.zeros(nb), np.zeros(nb)
-        # Nj_dot_r, Mj_dot_r = np.zeros(nb), np.zeros(nb)
-
-        # # Pull out individual arrays from y
-        # Ns = np.abs(y[0:nb])
-        # alphas = y[nb:2 * nb]
-        # Nr = np.abs(y[2 * nb:3 * nb])
-        # Mr = np.abs(y[3 * nb:4 * nb])
+        # Pull out individual arrays from y
         Ns, alpha, Nr, Mr = self.massbins.unpack_values(y, grouped_rem=True)
         dNs, dalpha, dNr, dMr = self.massbins.blanks(packed=False,
                                                      grouped_rem=True)
@@ -452,8 +423,6 @@ class EvolvedMF:
             N_sum = np.sum(Ns) + np.sum(np.r_[Nr])
             dNs += Ndot * Ns / N_sum
 
-            # dNr[sel] += Ndot * Nr[sel] / N_sum
-            # dMr[sel] += (Ndot * Nr[sel] / N_sum) * (Mr[sel] / Nr[sel])
             for c in range(len(Nr)):  # Each remnant class
                 sel = Nr[c] > 0
                 mr = Mr[c][sel] / Nr[c][sel]
@@ -690,18 +659,6 @@ class EvolvedMF:
 
         # Stars
 
-        # self.alphas = np.empty((self.massbins.nbin.MS, nb))
-
-        # self.Ns = np.empty((self.massbins.nbin.MS, nb))
-        # self.Ms = np.empty((self.massbins.nbin.MS, nb))
-        # self.ms = np.empty((self.massbins.nbin.MS, nb))
-
-        # self.mes = np.empty((nout, nb + 1))  # TODO need to return this??
-
-        # self.Nr = np.empty((nout, nb))
-        # self.Mr = np.empty((nout, nb))
-        # self.mr = np.empty((nout, nb))
-
         self.Ns, self.alpha, self.Nr, self.Mr = self.massbins.blanks(
             'empty', extra_dims=[self.nout], packed=False, grouped_rem=True
         )
@@ -717,7 +674,6 @@ class EvolvedMF:
         # ------------------------------------------------------------------
 
         t0 = 0.0
-        # y = np.r_[self.Ns0, self.alphas0, self.Nr0, self.Mr0]
         y0 = self.massbins.initial_values()
 
         sol = ode(self._derivs)
@@ -748,45 +704,14 @@ class EvolvedMF:
                 # Extract the N, M and alphas for stars and remnants
                 # ----------------------------------------------------------
 
-                # # Extract stars
-                # Ns = sol.y[0:nb]
-                # alphas = sol.y[nb:2 * nb]
-
                 Ns, alpha, Nr, Mr = self.massbins.unpack_values(
                     sol.y, grouped_rem=True
                 )
-
-                # # Some special treatment to adjust current turn-off bin edge
-                # mes = np.copy(self.me)
-                # if ti > self.tms_u[-1]:
-                #     isev = np.where(self.me > self.compute_mto(ti))[0][0] - 1
-                #     mes[isev + 1] = self.compute_mto(ti)
 
                 bins_MS = self.massbins.turned_off_bins(self.compute_mto(ti))
 
                 As = Ns / Pk(alpha, 1, *bins_MS)
                 Ms = As * Pk(alpha, 2, *bins_MS)
-
-                # # Extract remnants (copies due to below ejections)
-                # Nr = sol.y[2 * nb:3 * nb].copy()
-                # Mr = sol.y[3 * nb:4 * nb].copy()
-
-                # TODO label the remnant types differently now
-                # # ----------------------------------------------------------
-                # # Determine types of remnants/stars in each bin
-                # # ----------------------------------------------------------
-                # # *not* the same as `IFMR.predict_type`, but the probable
-                # #   remnant in each final bin
-
-                # # TODO change how bins are done, this isn't guaranteed accurate
-                # rem_types = np.full(nb, 'NS')
-
-                # rem_types[self.me[:-1] < self.IFMR.WD_mf.upper] = 'WD'
-
-                # # Special handling to also include the bin containing mBH_min
-                # cutoff = self.me[:-1][self.me[:-1] < self.IFMR.BH_mf.lower][-1]
-
-                # rem_types[self.me[:-1] >= cutoff] = 'BH'
 
                 # ----------------------------------------------------------
                 # Eject BHs, first through natal kicks, then dynamically
@@ -799,25 +724,15 @@ class EvolvedMF:
                 # Check if any BH have been created
                 if ti > self.compute_tms(self.IFMR.BH_mi.lower):
 
-                    # BH_cut = (rem_types == 'BH')
-
-                    # Mr_BH, Nr_BH = Mr[BH_cut], Nr[BH_cut]
-                    # Mr_BH, Nr_BH = Mr.BH, Nr.BH
-
                     # calculate total mass we want to eject
                     M_eject = Mr.BH.sum() * (1.0 - self.BH_ret_dyn)
 
-                    # # First remove mass from all bins by natal kicks, if desired
-                    # if self.natal_kicks:
-                    #     Mr_BH, Nr_BH, kicked = self._natal_kick_BH(Mr_BH, Nr_BH)
-                    #     M_eject -= kicked
+                    # First remove mass from all bins by natal kicks, if desired
                     if self.natal_kicks:
                         *_, kicked = self._natal_kick_BH(Mr.BH, Nr.BH)
                         M_eject -= kicked
 
                     # Remove dynamical BH ejections
-                    # Mr[BH_cut], Nr[BH_cut] = self._dyn_eject_BH(Mr_BH, Nr_BH,
-                    #                                             M_eject=M_eject)
                     self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
 
                 # ----------------------------------------------------------
@@ -831,9 +746,6 @@ class EvolvedMF:
                 self.Ms[iout, :] = Ms
 
                 self.ms[iout, :] = Ms / Ns
-
-                # # Edges of star mass bins
-                # self.mes[iout, :] = mes
 
                 # Remnants
                 for c in range(len(Nr)):  # Each remnant class
