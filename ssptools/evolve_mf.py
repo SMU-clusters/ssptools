@@ -153,7 +153,6 @@ class EvolvedMF:
         cs = self.Ns[-1] > 10 * self.Nmin
         Ms = self.Ms[-1][cs]
 
-        # cr = self.Nr[-1] > 10 * self.Nmin
         cr = np.c_[self.Nr][-1] > 10 * self.Nmin
         Mr = np.c_[self.Mr][-1][cr]
 
@@ -164,7 +163,6 @@ class EvolvedMF:
         cs = self.Ns[-1] > 10 * self.Nmin
         Ns = self.Ns[-1][cs]
 
-        # cr = self.Nr[-1] > 10 * self.Nmin
         cr = np.c_[self.Nr][-1] > 10 * self.Nmin
         Nr = np.c_[self.Nr][-1][cr]
 
@@ -183,15 +181,14 @@ class EvolvedMF:
         cs = self.Ns[-1] > 10 * self.Nmin
         bws = (mes.upper - mes.lower)[cs]
 
-        cr = self.Nr[-1] > 10 * self.Nmin
-        bwr = np.diff(np.c_[self.massbins.bins[1:]][-1])[cr]
+        cr = np.c_[self.Nr][-1] > 10 * self.Nmin
+        bwr = np.diff(np.c_[self.massbins.bins[1:]], axis=0)[-1][cr]
 
         return np.r_[bws, bwr]
 
     @property
     def types(self):
         cs = self.Ns[-1] > 10 * self.Nmin
-        # cr = self.Nr[-1] > 10 * self.Nmin
         cr = np.c_[self.Nr][-1] > 10 * self.Nmin
 
         ts = ['MS'] * cs.sum()
