@@ -296,11 +296,11 @@ class MassBins:
         # total size of y
         # ------------------------------------------------------------------
 
-        self._blueprint = np.cumsum([nbin_MS, nbin_MS,  # Ms, alphas
+        self._blueprint = np.cumsum([0, nbin_MS, nbin_MS,  # Ms, alphas
                                      nbin_WD, nbin_NS, nbin_BH,  # N rem
-                                     nbin_WD, nbin_NS])  # , nbin_BH])  # M rem
+                                     nbin_WD, nbin_NS, nbin_BH])  # M rem
 
-        self._ysize = self._blueprint[-1] + nbin_BH
+        self._ysize = self._blueprint[-1]
 
         # ------------------------------------------------------------------
         # Save collections of useful attributes
@@ -485,7 +485,7 @@ class MassBins:
 
         inp_arrays = (Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh)
         out = self.blanks('empty')
-        bp = [0, *self._blueprint, None]
+        bp = self._blueprint
         for inp, i, j in zip(inp_arrays, bp[:-1], bp[1:]):
             out[i:j] = inp
 
@@ -532,7 +532,7 @@ class MassBins:
         # Manually unpack each array, rather than using `np.split`, based on
         # the blueprint, just to speed up the unpacking slightly.
 
-        bp = [0, *self._blueprint, None]
+        bp = self._blueprint
         out = [y[..., i:j] for i, j in zip(bp[:-1], bp[1:])]
 
         # If desired, group the remnants (M and N) into `rem_classes`

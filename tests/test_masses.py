@@ -66,7 +66,7 @@ class TestArrayPacking:
     # ----------------------------------------------------------------------
 
     def test_packing(self):
-        arrays = np.split(range(self.mb._ysize), self.mb._blueprint)
+        arrays = np.split(range(self.mb._ysize), self.mb._blueprint[1:-1])
 
         res = self.mb.pack_values(*arrays)
 
@@ -80,7 +80,7 @@ class TestArrayPacking:
 
         res = self.mb.unpack_values(y)
 
-        expected = np.split(range(self.mb._ysize), self.mb._blueprint)
+        expected = np.split(range(self.mb._ysize), self.mb._blueprint[1:-1])
 
         assert len(res) == len(expected)
 
