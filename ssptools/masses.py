@@ -58,28 +58,62 @@ def _divide_bin_sizes(N, Nsec):
 
 
 class MassBins:
-    '''
-    Class constructing and holding the "blueprints" of the mass bins, both
-    stellar and remnants, separated by types
+    '''Representation and handling of mass bins, for both stars and remnants
 
-    Able to, based on the IFMR and input params, setup the stellar and remnant
-    mass bins, and create the "unpacked" `y` array which is meant to be used
-    by ODE solvers, then, once passed to the ODEs, pack such a `y` array into
-    the separate mass bins.
+    A class handling the construction, holding and handling of mass bins.
+    Both stars and remnants mass bins are handled separately.
 
-    Holds various helper functions for then dealing with mass bins, bin edges,
-    determining bin indices, etc.
+    Based on input parameters defining the binned mass function (break masses,
+    number of bins, etc.) sets up the spacing and boundaries of mass bins.
+    Mass bins are defined using the `mbin` named tuple, with upper and lower
+    bounds for each bin.
+
+    The spacing of the bins, currently, can be either linear or log spaced,
+    between the break masses.
+
+    Remnant bins are defined based on the possible remnant max/min bounds,
+    dictated by the IFMR, and the stellar mass bins.
+    Remnant bins are stored separately for each remnant class, avoiding any
+    possible overlap between different kinds of remnants.
+
+    Methods are provided to help with interacting with these mass bins,
+    including separating the different types, determining which bin a mass falls
+    into, etc.
+
+    This class provides a number of methods to help and facilitate the use of
+    numerical ODE solvers, such as `scipy.integrate.ode` in `EvolvedMF`, with
+    the mass bins.
+    Such solvers are based on a single array of `y` numerical values (such that
+    :math:$y'(t)=f(t,y)$), which must be dissected within the derivative
+    functions into their constituent values.
+    In the case of the derivatives in `EvolvedMF`, this `y` array is made up of
+    8 parameters (arrays); Ns, the number of stars in each stellar mass bin,
+    alphas, the mass function slopes in each stellar mass bin, Nwd, Nns, Nbh,
+    the number of remnants in each remnant mass bin, Mwd, Mns, Mbh, the total
+    mass of remnants in each remnant mass bin. Each of these constituent arrays
+    have the size of the corresponding number of mass bins.
+    Methods are available here to pack these distinct arrays into a single `y`
+    or unpack a single `y` into the separate arrays.
+
+    Note: currently this class only supports an IMF of a 3-component power
+    law.
 
     Parameters
     ----------
     m_break : list of float
-        Break-masses (including outer bounds; size N+1)
+        IMF break-masses (including outer bounds; size 4)
 
     a : list of float
-        mass function slopes (size N)
+        IMF power law slopes (size 3)
 
-    nbin : list of int
-        Number of mass bins in each regime (size N)
+    nbins : int or list of int (size 3) or dict
+        Number of stellar mass bins in each regime. If a single integer, the
+        number mass bins between each break mass will be equal, otherwise
+        the number of bins between each can be specified directly.
+        Remnant bins will be created between IFMR bounds by copying bins from
+        the created stellar mass bins.
+        Also allowed is a dict of {'MS', 'WD', 'NS', 'BH'}, each containing
+        a number of bins, where the remnant bins can be specified directly.
 
     N0 : int
         Total initial number of stars
@@ -95,6 +129,20 @@ class MassBins:
         'split_linear' will linearly space the bins between the break masses.
         Note that in both cases the spacing between the regimes will *not* be
         the same
+
+    Attributes
+    ----------
+    nbin : star_classes of int
+        The number of bins in each stellar object type
+
+    nbin_tot : int
+        The total number of bins, including stars and remnants
+
+    bins : star_classes of mbin of ndarray
+        Mass bins of each stellar object type, defined using the `mbin` named
+        tuple class, with upper and lower bounds. Each will have a size
+        corresponding to `nbin`.
+
     '''
 
     def __init__(self, m_break, a, nbins, N0, ifmr, *,
@@ -264,10 +312,24 @@ class MassBins:
         self.bins = star_classes(MS=bins_MS, WD=bins_WD, NS=bins_NS, BH=bins_BH)
 
     def initial_values(self, *, packed=True):
-        '''return packed array of initial values
+        '''Return an array corresponding to `y` populated based on the IMF
 
-        if packed=False, will instead return the initial number and total
-        masses in each clasee (not that thats super useful)
+        Based on the input IMF slopes and break masses, create an empty `y`
+        array and populate it with "initial" values.
+        These values will populate the number of stars and the alpha slopes,
+        and all remnants will be left as 0.
+
+        Parameters
+        ----------
+        packed : bool, optional
+            If True (default) will return a single array, otherwise will return
+            two named tuples of `star_classes` with the masses and numbers in
+            each stellar class. Note that this is *not* the same as an unpacked
+            array.
+
+        Return
+        ------
+        ndarray or 2-tuple of named `star_classes` tuples
         '''
 
         # TODO this is where we restrict to 3comp IMF,
@@ -318,10 +380,43 @@ class MassBins:
             return N, M
 
     def blanks(self, value=0., extra_dims=None, *, packed=True, **kwargs):
-        '''return arrays of correct shape for y or y' all set to zeros (or
-        something else). Meant for use as like initial derivatives and stuff
+        '''Returns an array corresponding to `y` with a single (blank) value
 
-        shape will be (*extra_dims, y size)
+        Returns a new array (or set of arrays) corresponding to the `y`
+        array, with all values set to a single given value, meant to represent
+        initial empty arrays to be filled with values in the course of a
+        derivative function.
+
+        Any value is supported, but 0 or an empty array will be the fastest.
+        If desired, the `y` array can unpacked into a list of arrays, such
+        as is done by the `unpack_values` method.
+
+        Multidimensional arrays can be returned by supplying extra dimensions.
+        The final dimension will always be the required size (nbin_tot * 2).
+        Be aware that, while `unpack_values` will support such a
+        multidimensional `y` array as input, `pack_values` will not accept any
+        multidimensional arrays.
+
+        Parameters
+        ----------
+        value : float or 'empty', optional
+            The value to fill the new blank array with. If 'empty', will use the
+            `np.empty` initilization. The default (0) and 'empty' will be the
+            most efficient, however any value is supported.
+
+        extra_dims : None or list of int, optional
+            An optional list of integer dimensions. If given, the shape of the
+            final array will be (*extra_dims, nbin_tot * 2).
+
+        packed : bool, optional
+            If True (default) will return a single blank array, otherwise this
+            will be passed to `unpack_values` first. All other kwargs will
+            also be passed to this call.
+
+        Returns
+        -------
+        ndarray or list of ndarray
+            The final, blank, array with the given value
         '''
 
         shape = (*([] if extra_dims is None else extra_dims), self._ysize)
@@ -336,11 +431,58 @@ class MassBins:
         return full if packed else self.unpack_values(full, **kwargs)
 
     def pack_values(self, Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh):
-        '''Put a bunch of arrays into the correct packed format for y or y'
-        Mostly a convenience function for packing derivatives, allowing to
-        supply by keyword things out of order or from various lists using *
+        '''Pack various arrays into a single `y` array
+
+        Given 8 separate arrays, combine them into a single unified "packed"
+        array, such as those required for input/output to numerical DE solvers.
+
+        Parameters
+        ----------
+        Ns : ndarray
+            Array containing values corresponding to the number of stars,
+            placed first in the packed array. Must have size `nbin.MS`.
+
+        alpha : ndarray
+            Array containing values corresponding to stellar alphas
+            placed second in the packed array. Must have size `nbin.MS`.
+
+        Nwd : ndarray
+            Array containing values corresponding to number of WD
+            placed third in the packed array. Must have size `nbin.WD`.
+
+        Nns : ndarray
+            Array containing values corresponding to number of NS
+            placed fourth in the packed array. Must have size `nbin.NS`.
+
+        Nbh : ndarray
+            Array containing values corresponding to number of BH
+            placed fifth in the packed array. Must have size `nbin.BH`.
+
+        Mwd : ndarray
+            Array containing values corresponding to mass of WD
+            placed sixth in the packed array. Must have size `nbin.WD`.
+
+        Mns : ndarray
+            Array containing values corresponding to mass of NS
+            placed seventh in the packed array. Must have size `nbin.NS`.
+
+        Mbh : ndarray
+            Array containing values corresponding to mass of BH
+            placed last in the packed array. Must have size `nbin.BH`.
+
+        Returns
+        -------
+        y : ndarray
+            Single "packed" array of values with total size nbin_tot * 2.
+
+        See also
+        --------
+        unpack_values : The inverse of this method
         '''
-        # return np.r_[Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh]
+
+        # Manually pack the arrays instead of simply concatenating
+        # (i.e. `np.r_`), just to speed up the packing slightly
+
         inp_arrays = (Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh)
         out = self.blanks('empty')
         bp = [0, *self._blueprint, None]
@@ -350,38 +492,84 @@ class MassBins:
         return out
 
     def unpack_values(self, y, *, grouped_rem=False):
-        '''Unpack a given y into the various arrays'''
-        # Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh = np.split(y, self._blueprint,
-        #                                                    axis=-1)
+        '''Unpack a given `y` array into the various expected arrays
 
-        # if grouped_rem:
-        #     Nrem = rem_classes(WD=Nwd, NS=Nns, BH=Nbh)
-        #     Mrem = rem_classes(WD=Mwd, NS=Mns, BH=Mbh)
-        #     return Ns, alpha, Nrem, Mrem
+        Taking in a single unified "packed" array, such as those passed into
+        derivative functions from numerical DE solvers, splits the array into
+        the 8 expected arrays (Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh) based
+        on the number of bins in each object type, returning a list of all
+        arrays.
 
-        # else:
-        #     return Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh
+        Should work for multidimensional `y` arrays, as long as the *final*
+        dimension is the size of the total arrays (nbin_tot * 2).
+
+        Parameters
+        ----------
+        y : ndarray
+            Single "packed" array of values to unpack. Final (-1) dimension
+            must have correct size (nbin_tot * 2).
+
+        grouped_rem : bool, optional
+            Whether to pack the arrays for the remnant numbers and masses
+            (i.e. the last six returned arrays) into a single named tuple
+            (`rem_classes`) instead of returning a full separated list of all
+            arrays (the default).
+
+        Returns
+        -------
+        list of ndarray
+            A list of 8 arrays representing each sliced out section of the input
+            array, with sizes based on the bin sizes of the relevant classes.
+            If `grouped_rem` is True, the list will instead contain 4 elements,
+            two arrays, exactly as usual, and 2 `rem_classes` named tuples each
+            containing half of the 6 other arrays.
+
+        See also
+        --------
+        pack_values : The inverse of this method
+        '''
+
+        # Manually unpack each array, rather than using `np.split`, based on
+        # the blueprint, just to speed up the unpacking slightly.
 
         bp = [0, *self._blueprint, None]
         out = [y[..., i:j] for i, j in zip(bp[:-1], bp[1:])]
 
+        # If desired, group the remnants (M and N) into `rem_classes`
         if grouped_rem:
             Ns, alpha = out[0:2]
             Nrem = rem_classes(*out[2:5])
             Mrem = rem_classes(*out[5:8])
-            return Ns, alpha, Nrem, Mrem
+            return [Ns, alpha, Nrem, Mrem]
 
         else:
             return out
 
     def determine_index(self, mass, massbins, *, allow_overflow=False):
-        '''determine the mbin index in the a given mass falls into in
-        a `mbin` type set of mass bins
+        '''Determine the index of the bin in `massbins` containing `mass`
 
-        mass bins are left-inclusive, i.e. [lower, upper)
+        Given a set of massbins, determine the index of the bin which the given
+        mass falls into.
 
-        currently only support one mass at a time, sorry
+        Note that mass bins are considered "left-inclusive" here,
+        i.e. [lower, upper), therefore masses falling on the bin edges will
+        return the lower index.
+
+        Currently this function only supports one input mass at a time.
+
+        Parameters
+        ----------
+        mass : float
+            The mass from which to determine the location/index within the mass
+            bins.
+
+        massbins : mbin or {'MS', 'WD', 'NS', 'BH'}
+            The massbins to determine the mass index within. Either a mass bin
+            named tuple with upper and lower bound fields, or a two character
+            string indicating the stellar type, which will pull from the
+            massbins stored in this instance.
         '''
+        # TODO support multiple mass at once, by correctly arranging mass shape
 
         # If a string labelling the class, get from stored bins
         # Otherwise assume it's already a massbins class
@@ -404,13 +592,25 @@ class MassBins:
         return ind
 
     def turned_off_bins(self, mto):
-        '''return a version of the MS bins with the upper bounds of the turn
-        off mass bin adjusted to mto, which is required sometimes to basically
-        spoof the fact that, in that bin, the mass above this mto will have
-        actually been entirely converted to remnants. But, because of binning,
-        we can't simulate that intra-bins and so need to functionally
-        approximate it for use in some functions, where the mean mass of the
-        bin would actually be lowered.
+        '''Return a copy of the MS bins with upper bounds adjusted up to `mto`
+
+        Returns a copy of the stellar (MS) mass bins where the upper bounds of
+        one bin, that holding the given turn-off mass (`mto`), are adjusted to
+        fall on the `mto`. This may be required at times to, basically, spoof
+        the fact that all mass within a given bin but above `mto` may have been
+        lost (e.g. turned into remnants), and thus shouldn't be considered in
+        some cases for computing quantities such as the mean bin mass.
+
+        Parameters
+        ----------
+        mto : float
+            The "turn-off" mass used to locate and truncate the turn-off bin.
+
+        Returns
+        -------
+        mbin
+            Near identical copy of the MS mass bin tuple, with the turn-off bin
+            adjusted.
         '''
 
         low, up = self.bins.MS.lower.copy(), self.bins.MS.upper.copy()
