@@ -5,7 +5,7 @@ import warnings
 import pytest
 import numpy as np
 
-from ssptools import evolve_mf
+from ssptools import evolve_mf, masses, ifmr
 
 
 # Mixture of `ssptools` and `GCfit` defaults for `evolve_mf`
@@ -78,13 +78,13 @@ class TestHelperMethods:
     @pytest.mark.parametrize(
         'ti, expected',
         [
-            (-1.0, np.nan),
-            # (0, 0),  # Don't test this cause the eqns not physical here anyway
-            (emf._tms_constants[0] - 1e-15, np.nan),
+            (-1.0, np.inf),
+            (0, np.inf),
+            (emf._tms_constants[0] - 1e-15, np.inf),
             (emf._tms_constants[0], np.inf),
             (np.finfo('float64').max, 0.0)
         ],
-        ids=['negative', 't < a0', 't = a0', 'near-inf']
+        ids=['negative', 't = 0', 't < a0', 't = a0', 'near-inf']
     )
     def test_mto_bounds(self, ti, expected):
 
@@ -110,17 +110,17 @@ class TestHelperMethods:
     # Testing computation of P_k helper integral solution
     # ----------------------------------------------------------------------
 
-    @pytest.mark.parametrize('k', [1., 1.5, 2.])
-    @pytest.mark.parametrize('a', [-2, -1., -0.5, 1.0])
-    def test_Pk(self, a, k):
-        from scipy.integrate import quad
+    # @pytest.mark.parametrize('k', [1., 1.5, 2.])
+    # @pytest.mark.parametrize('a', [-2, -1., -0.5, 1.0])
+    # def test_Pk(self, a, k):
+    #     from scipy.integrate import quad
 
-        m1, m2 = 0.5, 1.0
-        expected, err = quad(lambda m: m**(a + k - 1), m1, m2)
+    #     m1, m2 = 0.5, 1.0
+    #     expected, err = quad(lambda m: m**(a + k - 1), m1, m2)
 
-        Pk = self.emf._Pk(a=a, k=k, m1=m1, m2=m2)
+    #     Pk = self.emf._Pk(a=a, k=k, m1=m1, m2=m2)
 
-        assert Pk == pytest.approx(expected, abs=err)
+    #     assert Pk == pytest.approx(expected, abs=err)
 
 
 class TestBHEvolution:
@@ -215,14 +215,20 @@ class TestDerivatives:
 
     emf_kw = DEFAULT_KWARGS.copy() | {'tout': [0.], 'nbins': [1, 1, 2]}
 
+    mb = masses.MassBins(emf_kw['m_breaks'], emf_kw['a_slopes'],
+                         emf_kw['nbins'], emf_kw['N0'],
+                         ifmr.IFMR(emf_kw['FeH']))
+
     # ----------------------------------------------------------------------
     # Derivative routines
     # ----------------------------------------------------------------------
 
     @pytest.fixture()
     def y(self):
-        nb = sum(self.emf_kw['nbins'])
-        return np.array([1000] * nb + [1] * nb + [10] * nb + [2] * nb)
+        nb = self.mb.nbin
+        return np.array(([1000] * nb.MS) + ([1] * nb.MS)
+                        + ([500] * nb.WD) + ([10] * nb.NS) + ([100] * nb.BH)
+                        + ([250] * nb.WD) + ([140] * nb.NS) + ([250] * nb.BH))
 
     @pytest.mark.parametrize(
         't, expected',
@@ -230,11 +236,13 @@ class TestDerivatives:
             (100, np.array([0., 0., -10.16057518, 0.,
                             0., 0., 0., 0.,
                             0., 0., 10.16057518, 0.,
-                            0., 0., 11.28587621, 0.])),
+                            0., 0., 0., 0.,
+                            11.28587621, 0., 0., 0.])),
             (12000, np.array([0., -0.07375997, 0., 0.,
                               0., 0., 0., 0.,
                               0., 0.07375997, 0., 0.,
-                              0., 0.04325484, 0., 0.])),
+                              0., 0., 0., 0.04325484,
+                              0., 0., 0., 0.])),
         ],
     )
     def test_sev(self, y, t, expected):
@@ -247,18 +255,20 @@ class TestDerivatives:
     @pytest.mark.parametrize(
         't, expected',
         [
-            (100, np.array([7.588256e-01, 3.191671e-01, -9.576813e-01,
-                            -1.015838e+01, -3.566531e-04, -6.205286e-04,
-                            -1.096328e-03, -3.734391e-03, 9.519368e-03,
-                            9.519368e-03, 9.519368e-03, 9.519368e-03,
-                            1.903873e-03, 1.903873e-03, 1.903873e-03,
-                            1.903873e-03])),
-            (12000, np.array([6.814154e-01, 3.696330e-01, -1.907299e+00,
-                              -9.177942e+00, -3.202699e-04, -5.273448e-04,
-                              -1.187120e-03, -3.916009e-03, 8.548268e-03,
-                              8.548268e-03, 8.548268e-03, 8.548268e-03,
-                              1.709653e-03, 1.709653e-03, 1.709653e-03,
-                              1.709653e-03])),
+            (100, np.array([-3.92479847e+00, -1.65079648e+00, 0.00000000e+00,
+                            0.00000000e+00, 1.84468190e-03, 3.20949877e-03,
+                            0.00000000e+00, 0.00000000e+00, -1.47480168e+00,
+                            -1.47480168e+00, -1.47480168e+00, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00, -7.37400842e-01,
+                            -7.37400842e-01, -7.37400842e-01, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00])),
+            (12000, np.array([-3.74567798e+00, -2.03183858e+00, 0.00000000e+00,
+                              0.00000000e+00, 1.76049405e-03, 2.89876603e-03,
+                              0.00000000e+00, 0.00000000e+00, -1.40749448e+00,
+                              -1.40749448e+00, -1.40749448e+00, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00, -7.03747241e-01,
+                              -7.03747241e-01, -7.03747241e-01, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00])),
         ],
     )
     def test_esc(self, y, t, expected):

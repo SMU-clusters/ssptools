@@ -6,6 +6,8 @@ from scipy.integrate import ode
 from scipy.interpolate import interp1d, UnivariateSpline
 
 from .ifmr import IFMR, get_data
+from .masses import MassBins, Pk
+
 
 # TODO optionally support units for some things
 
@@ -70,6 +72,12 @@ class EvolvedMF:
     vesc : float, optional
         Initial cluster escape velocity, in km/s, for use in the computation of
         BH natal kick effects. Defaults to 90 km/s
+
+    md : float, optional
+        Depletion mass, below which stars are preferentially disrupted during
+        the stellar escape derivatives.
+        The default 1.2 is based on Lamers et al. (2013) and shouldn't be
+        changed unless you know what you're doing.
 
     Attributes
     ----------
@@ -145,8 +153,8 @@ class EvolvedMF:
         cs = self.Ns[-1] > 10 * self.Nmin
         Ms = self.Ms[-1][cs]
 
-        cr = self.Nr[-1] > 10 * self.Nmin
-        Mr = self.Mr[-1][cr]
+        cr = np.c_[self.Nr][-1] > 10 * self.Nmin
+        Mr = np.c_[self.Mr][-1][cr]
 
         return np.r_[Ms, Mr]
 
@@ -155,8 +163,8 @@ class EvolvedMF:
         cs = self.Ns[-1] > 10 * self.Nmin
         Ns = self.Ns[-1][cs]
 
-        cr = self.Nr[-1] > 10 * self.Nmin
-        Nr = self.Nr[-1][cr]
+        cr = np.c_[self.Nr][-1] > 10 * self.Nmin
+        Nr = np.c_[self.Nr][-1][cr]
 
         return np.r_[Ns, Nr]
 
@@ -166,20 +174,22 @@ class EvolvedMF:
 
     @property
     def bin_widths(self):
-        bw = np.diff(self.mes[-1])
+
+        mto = self.compute_mto(self.tout[-1])
+        mes = self.massbins.turned_off_bins(mto)
 
         cs = self.Ns[-1] > 10 * self.Nmin
-        bws = bw[cs]
+        bws = (mes.upper - mes.lower)[cs]
 
-        cr = self.Nr[-1] > 10 * self.Nmin
-        bwr = bw[cr]
+        cr = np.c_[self.Nr][-1] > 10 * self.Nmin
+        bwr = np.diff(np.c_[self.massbins.bins[1:]], axis=0)[-1][cr]
 
         return np.r_[bws, bwr]
 
     @property
     def types(self):
         cs = self.Ns[-1] > 10 * self.Nmin
-        cr = self.Nr[-1] > 10 * self.Nmin
+        cr = np.c_[self.Nr][-1] > 10 * self.Nmin
 
         ts = ['MS'] * cs.sum()
         tr = self.rem_types[cr]
@@ -192,17 +202,11 @@ class EvolvedMF:
 
     @property
     def nmr(self):
-        return (self.Nr[-1] > 10 * self.Nmin).sum()
+        return (np.c_[self.Nr][-1] > 10 * self.Nmin).sum()
 
     def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot,
                  N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
-                 natal_kicks=False, vesc=90):
-
-        # ------------------------------------------------------------------
-        # Initialise the mass bins given the power-law IMF slopes and bins
-        # ------------------------------------------------------------------
-
-        self._set_imf(m_breaks, a_slopes, nbins, N0)
+                 natal_kicks=False, vesc=90, binning_method='default', md=1.2):
 
         # ------------------------------------------------------------------
         # Set various other parameters
@@ -212,9 +216,12 @@ class EvolvedMF:
         self.tcc = tcc
         self.tout = np.atleast_1d(tout)
         self.Ndot = Ndot
+
         self.NS_ret = NS_ret
         self.BH_ret_int = BH_ret_int
         self.BH_ret_dyn = BH_ret_dyn
+        self._frem = {'WD': 1., 'NS': NS_ret, 'BH': BH_ret_int}
+
         self.FeH = FeH
 
         if Ndot > 0:
@@ -226,9 +233,14 @@ class EvolvedMF:
         # Minimum of stars to call a bin "empty"
         self.Nmin = 0.1
 
-        # Depletion mass: stars below this mass are preferentially disrupted
-        # Hardcoded for now, perhaps vary, fit on N-body?
-        self.md = 1.2
+        self.md = md
+
+        # ------------------------------------------------------------------
+        # Initialise the mass bins given the power-law IMF slopes and bins
+        # ------------------------------------------------------------------
+
+        self.massbins = MassBins(m_breaks, a_slopes, nbins, N0, self.IFMR,
+                                 binning_method=binning_method)
 
         # ------------------------------------------------------------------
         # Setup lifetime approximations and compute t_ms of all bin edges
@@ -240,8 +252,8 @@ class EvolvedMF:
         self._tms_constants = mstogrid[nearest_FeH, 1:]
 
         # Compute t_ms for all bin edges
-        self.tms_l = self.compute_tms(self.me[:-1])
-        self.tms_u = self.compute_tms(self.me[1:])
+        self.tms_l = self.compute_tms(self.massbins.bins.MS.lower)
+        self.tms_u = self.compute_tms(self.massbins.bins.MS.upper)
 
         # ------------------------------------------------------------------
         # Generate times for integrator
@@ -278,122 +290,6 @@ class EvolvedMF:
 
         self._evolve()
 
-    @np.errstate(invalid='ignore')
-    def _Pk(self, a, k, m1, m2):
-        r'''Convenience function for computing quantities related to IMF
-
-        ..math ::
-            \begin{align}
-                P_k(\alpha_j,\ m_{j,1},\ m_{j,2})
-                    &= \int_{m_{j,1}}^{m_{j,2}} m^{\alpha_j + k - 1}
-                        \ \mathrm{d}m \\
-                    &= \begin{cases}
-                        \frac{m_{j,2}^{\alpha_j+k} - m_{j,1}^{\alpha_j+k} }
-                             {\alpha_j + k},
-                             \quad \alpha_j + k \neq 0 \\
-                        \ln{\left(\frac{m_{j,2}}{m_{j,1}}\right)},
-                            \quad \alpha_j + k = 0
-                    \end{cases}
-            \end{align}
-
-        Parameters
-        ----------
-        a : float
-            Mass function power law slope effective between m1 and m2
-
-        k : int
-            k-index
-
-        m1, m2 : float
-            Upper and lower bound of given mass bin or range
-        '''
-
-        a = np.asarray(a, dtype=float)
-        res = np.asarray((m2 ** (a + k) - m1 ** (a + k)) / (a + k))  # a != k
-
-        if (casemask := np.asarray(-a == k)).any():
-            res[casemask] = np.log(m2 / m1)[casemask]
-
-        return res
-
-    def _set_imf(self, m_break, a, nbin, N0):
-        '''Initialize the mass bins based on the IMF and initial number of stars
-
-        Modifies in place a number of attributes of this class, related to the
-        initial setup of the output quantities, including nbin, me, mes0,
-        alphas0, Ns0, Ms0, ms0, Nr0, Mr0, mr0
-
-        Parameters
-        ----------
-        m_break : list of float
-            Break-masses (including outer bounds; size N+1)
-
-        a : list of float
-            mass function slopes (size N)
-
-        nbin : list of int
-            Number of mass bins in each regime (size N)
-
-        N0 : int
-            Total initial number of stars
-        '''
-
-        # Total number of mass bins
-        self.nbin = np.sum(nbin)
-
-        # ------------------------------------------------------------------
-        # Compute normalization factors A_j
-        # ------------------------------------------------------------------
-
-        A3 = (
-            self._Pk(a[2], 1, m_break[2], m_break[3])
-            + (m_break[1] ** (a[1] - a[0])
-               * self._Pk(a[0], 1, m_break[0], m_break[1]))
-            + (m_break[2] ** (a[2] - a[1])
-               * self._Pk(a[1], 1, m_break[1], m_break[2]))
-        ) ** (-1)
-
-        A2 = A3 * m_break[2] ** (a[2] - a[1])
-        A1 = A2 * m_break[1] ** (a[1] - a[0])
-
-        A = N0 * np.repeat([A1, A2, A3], nbin)
-
-        # ------------------------------------------------------------------
-        # Set mass bin edges
-        # Bins are logspaced evenly between the break masses, with the
-        # number of bins specified by nbin. This spacing is thus *not*
-        # consistent throughtout entire mass range.
-        # ------------------------------------------------------------------
-
-        # TODO equal-log-space between bins, would single logspace be better?
-        me1 = np.geomspace(m_break[0], m_break[1], nbin[0] + 1)
-        me2 = np.geomspace(m_break[1], m_break[2], nbin[1] + 1)
-        me3 = np.geomspace(m_break[2], m_break[3], nbin[2] + 1)
-
-        # Combine bin edges, avoiding repetition
-        self.me = np.r_[me1, me2[1:], me3[1:]]
-
-        # Set special edges for stars because stellar evolution affects this
-        self.mes0 = np.copy(self.me)
-
-        # ------------------------------------------------------------------
-        # Set the initial Nj and mj for all bins (stars and remnants)
-        # ------------------------------------------------------------------
-
-        # Expand array of IMF slopes to all mass bins
-        alpha = np.repeat(a, nbin)
-        self.alphas0 = alpha
-
-        # Set initial star bins based on IMF
-        self.Ns0 = A * self._Pk(alpha, 1, self.me[0:-1], self.me[1:])
-        self.Ms0 = A * self._Pk(alpha, 2, self.me[0:-1], self.me[1:])
-        self.ms0 = self.Ms0 / self.Ns0
-
-        # Set all initial remnant bins to zero
-        self.Nr0 = np.zeros(self.nbin)
-        self.Mr0 = np.zeros(self.nbin)
-        self.mr0 = np.zeros(self.nbin)
-
     def compute_tms(self, mi):
         '''Compute main-sequence lifetime for a given mass `mi`'''
         a = self._tms_constants
@@ -401,8 +297,15 @@ class EvolvedMF:
 
     def compute_mto(self, t):
         '''Compute the turn-off mass for a given time `t` (inverse of tms)'''
-        a = self._tms_constants
-        return (np.log(t / a[0]) / a[1]) ** (1 / a[2])
+        a0, a1, a2 = self._tms_constants
+
+        out = np.empty_like(t, dtype=float)
+        asympt = t > a0
+
+        out[asympt] = (np.log(np.asanyarray(t)[asympt] / a0) / a1) ** (1 / a2)
+        out[~asympt] = np.inf
+
+        return out
 
     def _derivs(self, t, y):
         '''Main function for computing derivatives relevant to mass evolution
@@ -447,9 +350,9 @@ class EvolvedMF:
         '''Derivatives relevant to mass changes due to stellar evolution'''
 
         # Setup derivative bins
-        Nj_dot_s, Nj_dot_r = np.zeros(self.nbin), np.zeros(self.nbin)
-        Mj_dot_r = np.zeros(self.nbin)
-        aj_dot_s = np.zeros(self.nbin)
+        Ns, alpha, Nr, Mr = self.massbins.unpack_values(y, grouped_rem=True)
+        dNs, dalpha, dNr, dMr = self.massbins.blanks(packed=False,
+                                                     grouped_rem=True)
 
         # Apply only if this time is atleast later than the earliest tms
         if t > self.tms_u[-1]:
@@ -457,27 +360,26 @@ class EvolvedMF:
             # Find out which mass bin is the current turn-off bin
             isev = np.where(t > self.tms_u)[0][0]
 
-            # Find bin edges of turn-off bin
-            m1 = self.me[isev]
+            m1 = self.massbins.bins.MS.lower[isev]
             mto = self.compute_mto(t)
-            Nj = y[isev]
+            Nj = Ns[isev]
 
             # Avoid "hitting" the bin edge
-            # i.e. when evolving with tout: mto > m1, otherwise: mto == m1
             if mto > m1 and Nj > self.Nmin:
 
                 # Two parameters defining the bin
-                alphaj = y[self.nbin + isev]
+                alphaj = alpha[isev]
 
                 # The normalization constant
                 # TODO deal with the constant divide-by-zero warning here
-                Aj = Nj / self._Pk(alphaj, 1, m1, mto)
+                Aj = Nj / Pk(alphaj, 1, m1, mto)
 
                 # Get the number of turn-off stars per unit of mass
                 dNdm = Aj * mto ** alphaj
 
             else:
                 dNdm = 0
+                # TODO just break???
 
             # Compute the full dN/dt = dN/dm * dm/dt
             a = self._tms_constants
@@ -487,7 +389,7 @@ class EvolvedMF:
             dNdt = -dNdm * dmdt
 
             # Fill in star derivatives (alphaj remains constant for _derivs_sev)
-            Nj_dot_s[isev] = dNdt
+            dNs[isev] = dNdt
 
             # Find remnant mass and which bin they go into
             m_rem, cls_rem = self.IFMR.predict(mto), self.IFMR.predict_type(mto)
@@ -496,90 +398,95 @@ class EvolvedMF:
             if m_rem > 0:
 
                 # Find bin based on lower bin edge (must be careful later)
-                irem = np.where(m_rem > self.me)[0][-1]
+                irem = self.massbins.determine_index(m_rem, cls_rem)
 
                 # Compute Remnant retention fractions based on remnant type
-
-                if cls_rem == 'WD':
-                    frem = 1.
-
-                elif cls_rem == 'BH':
-                    frem = self.BH_ret_int
-
-                # elif cls_rem == 'NS':
-                else:
-                    frem = self.NS_ret
+                frem = self._frem[cls_rem]
 
                 # Fill in remnant derivatives
-                Nj_dot_r[irem] = -dNdt * frem
-                Mj_dot_r[irem] = -m_rem * dNdt * frem
+                getattr(dNr, cls_rem)[irem] = -dNdt * frem
+                getattr(dMr, cls_rem)[irem] = -m_rem * dNdt * frem
 
-        return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
+        return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
 
     def _derivs_esc(self, t, y):
         '''Derivatives relevant to mass loss due to escaping low-mass stars'''
 
-        nb = self.nbin
-        md = self.md
-        Ndot = self.Ndot
-
-        # Setup derivative bins
-        Nj_dot_s, aj_dot_s = np.zeros(nb), np.zeros(nb)
-        Nj_dot_r, Mj_dot_r = np.zeros(nb), np.zeros(nb)
+        # nb = self.nbin
+        md, Ndot = self.md, self.Ndot
 
         # Pull out individual arrays from y
-        Ns = np.abs(y[0:nb])
-        alphas = y[nb:2 * nb]
-        Nr = np.abs(y[2 * nb:3 * nb])
-        Mr = np.abs(y[3 * nb:4 * nb])
+        Ns, alpha, Nr, Mr = self.massbins.unpack_values(y, grouped_rem=True)
+        dNs, dalpha, dNr, dMr = self.massbins.blanks(packed=False,
+                                                     grouped_rem=True)
 
         # If core collapsed, use different, simpler, algorithm
         if t < self.tcc:
-            N_sum = Ns.sum() + Nr.sum()
-            Nj_dot_s += Ndot * Ns / N_sum
-            sel = Nr > 0
-            Nj_dot_r[sel] += Ndot * Nr[sel] / N_sum
-            Mj_dot_r[sel] += (Ndot * Nr[sel] / N_sum) * (Mr[sel] / Nr[sel])
-            return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
 
-        # Determine mass of remnants
-        mr = 0.5 * (self.me[1:] + self.me[0:-1])
-        c = Nr > 0
-        mr[c] = Mr[c] / Nr[c]
+            N_sum = np.sum(Ns) + np.sum(np.r_[Nr])
+            dNs += Ndot * Ns / N_sum
 
-        # Setup edges for stars accounting for mto
-        mes = np.copy(self.me)
+            for c in range(len(Nr)):  # Each remnant class
+                sel = Nr[c] > 0
+                mr = Mr[c][sel] / Nr[c][sel]
+                dNr[c][sel] += Ndot * Nr[c][sel] / N_sum
+                dMr[c][sel] += mr * Ndot * Nr[c][sel] / N_sum
 
-        # Set all bins above current turn-off to this mto
-        if t > self.tms_u[-1]:
-            isev = np.where(mes > self.compute_mto(t))[0][0]
-            mes[isev] = self.compute_mto(t)
+            return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
 
-        # Helper mass and normalization quantities
-        m1 = mes[0:-1]
-        m2 = mes[1:]
+        # Stellar Integrals
 
-        P1 = self._Pk(alphas, 1, m1, m2)
-        P15 = self._Pk(alphas, 1.5, m1, m2)
+        mto = self.compute_mto(t)
 
-        # Compute relevant rate-of-change integrals I_j, J_j
-        c = (mr < self.md) & (m1 < m2)
+        bins_MS = self.massbins.turned_off_bins(mto)
 
-        Is = Ns[c] * (1 - md ** (-0.5) * P15[c] / P1[c])
-        Ir = Nr[c] * (1 - np.sqrt(mr[c] / md))
-        Jr = Mr[c] * (1 - np.sqrt(mr[c] / md))
+        P1 = Pk(alpha, 1, *bins_MS)
+        P15 = Pk(alpha, 1.5, *bins_MS)
+        P2 = Pk(alpha, 2, *bins_MS)
 
-        # Compute normalization constant B
-        B = Ndot / sum(Is + Ir)
+        ms = P2 / P1
+        depl_mask = ms < md
 
-        # Compute rates of change for all four quantities (cumulative per bin)
-        Nj_dot_s[c] += B * Is
-        aj_dot_s[c] += (B * ((m1[c] / md) ** 0.5 - (m2[c] / md) ** 0.5)
-                        / np.log(m2[c] / m1[c]))
-        Nj_dot_r[c] += B * Ir
-        Mj_dot_r[c] += B * Jr
+        Is = (Ns * (1 - md ** (-0.5) * (P15 / P1)))[depl_mask]
 
-        return np.r_[Nj_dot_s, aj_dot_s, Nj_dot_r, Mj_dot_r]
+        # Remnant integrals
+
+        *_, Ir, Jr = self.massbins.blanks(packed=False, grouped_rem=True)
+        for c in range(len(Nr)):  # Each remnant class
+
+            rem_mask = Nr[c] > 0
+
+            mr = Mr[c][rem_mask] / Nr[c][rem_mask]
+
+            Ir[c][rem_mask] = np.where(
+                mr < md, Nr[c][rem_mask] * (1 - np.sqrt(mr / md)), 0
+            )
+            Jr[c][rem_mask] = np.where(
+                mr < md, Mr[c][rem_mask] * (1 - np.sqrt(mr / md)), 0
+            )
+
+        # Normalization
+
+        B = Ndot / (np.sum(Is) + np.sum(np.r_[Ir]))
+
+        # Derivatives
+
+        dNs[depl_mask] += B * Is
+
+        dalpha[depl_mask] += (
+            B * ((bins_MS.lower[depl_mask] / md) ** 0.5
+                 - (bins_MS.upper[depl_mask] / md) ** 0.5)
+            / np.log(bins_MS.upper[depl_mask] / bins_MS.lower[depl_mask])
+        )
+
+        for c in range(len(Nr)):  # Each remnant class
+
+            rem_mask = Nr[c] > 0
+
+            dNr[c][rem_mask] += B * Ir[c][rem_mask]
+            dMr[c][rem_mask] += B * Jr[c][rem_mask]
+
+        return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
 
     def _get_retention_frac(self, fb, vesc):
         '''Compute BH natal-kick retention fraction'''
@@ -751,32 +658,30 @@ class EvolvedMF:
         # Initialize output arrays
         # ------------------------------------------------------------------
 
-        nb, nout = self.nbin, len(self.tout)
+        self.nout = len(self.tout)
 
-        self.nout = nout
+        # Stars
 
-        self.alphas = np.empty((nout, nb))
+        self.Ns, self.alpha, self.Nr, self.Mr = self.massbins.blanks(
+            'empty', extra_dims=[self.nout], packed=False, grouped_rem=True
+        )
 
-        self.Ns = np.empty((nout, nb))
-        self.Ms = np.empty((nout, nb))
-        self.ms = np.empty((nout, nb))
+        self.Ms, self.ms = np.empty_like(self.Ns), np.empty_like(self.Ns)
+        self.mr = self.Nr._make(np.empty_like(x) for x in self.Nr)
 
-        self.mes = np.empty((nout, nb + 1))
-
-        self.Nr = np.empty((nout, nb))
-        self.Mr = np.empty((nout, nb))
-        self.mr = np.empty((nout, nb))
+        self.rem_types = np.repeat(self.massbins.nbin._fields[1:],
+                                   self.massbins.nbin[1:])
 
         # ------------------------------------------------------------------
         # Initialise ODE solver
         # ------------------------------------------------------------------
 
         t0 = 0.0
-        y = np.r_[self.Ns0, self.alphas0, self.Nr0, self.Mr0]
+        y0 = self.massbins.initial_values()
 
         sol = ode(self._derivs)
         sol.set_integrator("dopri5", max_step=1e12, atol=1e-5, rtol=1e-5)
-        sol.set_initial_value(y, t=t0)
+        sol.set_initial_value(y0, t=t0)
 
         # ------------------------------------------------------------------
         # Evolve
@@ -802,67 +707,42 @@ class EvolvedMF:
                 # Extract the N, M and alphas for stars and remnants
                 # ----------------------------------------------------------
 
-                # Extract stars
-                Ns = sol.y[0:nb]
-                alphas = sol.y[nb:2 * nb]
+                Ns, alpha, Nr, Mr = self.massbins.unpack_values(
+                    sol.y, grouped_rem=True
+                )
 
-                # Some special treatment to adjust current turn-off bin edge
-                mes = np.copy(self.me)
-                if ti > self.tms_u[-1]:
-                    isev = np.where(self.me > self.compute_mto(ti))[0][0] - 1
-                    mes[isev + 1] = self.compute_mto(ti)
+                bins_MS = self.massbins.turned_off_bins(self.compute_mto(ti))
 
-                As = Ns / self._Pk(alphas, 1, mes[0:-1], mes[1:])
-                Ms = As * self._Pk(alphas, 2, mes[0:-1], mes[1:])
-
-                # Extract remnants (copies due to below ejections)
-                Nr = sol.y[2 * nb:3 * nb].copy()
-                Mr = sol.y[3 * nb:4 * nb].copy()
-
-                # ----------------------------------------------------------
-                # Determine types of remnants/stars in each bin
-                # ----------------------------------------------------------
-                # *not* the same as `IFMR.predict_type`, but the probable
-                #   remnant in each final bin
-
-                # TODO change how bins are done, this isn't guaranteed accurate
-                rem_types = np.full(nb, 'NS')
-                rem_types[self.me[:-1] < self.IFMR.WD_mf.upper] = 'WD'
-
-                # Special handling to also include the bin containing mBH_min
-                cutoff = self.me[:-1][self.me[:-1] < self.IFMR.BH_mf.lower][-1]
-                rem_types[self.me[:-1] >= cutoff] = 'BH'
+                As = Ns / Pk(alpha, 1, *bins_MS)
+                Ms = As * Pk(alpha, 2, *bins_MS)
 
                 # ----------------------------------------------------------
                 # Eject BHs, first through natal kicks, then dynamically
                 # ----------------------------------------------------------
                 # TODO really feels like this should be done during the
                 #   evolution/derivs? At least for the natal kicks.
+                # TODO due to rem_classes tuple, ejections done in place, which
+                #   is not ideal
 
                 # Check if any BH have been created
                 if ti > self.compute_tms(self.IFMR.BH_mi.lower):
 
-                    BH_cut = (rem_types == 'BH')
-
-                    Mr_BH, Nr_BH = Mr[BH_cut], Nr[BH_cut]
-
                     # calculate total mass we want to eject
-                    M_eject = Mr_BH.sum() * (1.0 - self.BH_ret_dyn)
+                    M_eject = Mr.BH.sum() * (1.0 - self.BH_ret_dyn)
 
                     # First remove mass from all bins by natal kicks, if desired
                     if self.natal_kicks:
-                        Mr_BH, Nr_BH, kicked = self._natal_kick_BH(Mr_BH, Nr_BH)
+                        *_, kicked = self._natal_kick_BH(Mr.BH, Nr.BH)
                         M_eject -= kicked
 
                     # Remove dynamical BH ejections
-                    Mr[BH_cut], Nr[BH_cut] = self._dyn_eject_BH(Mr_BH, Nr_BH,
-                                                                M_eject=M_eject)
+                    self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
 
                 # ----------------------------------------------------------
                 # save values into output arrays
                 # ----------------------------------------------------------
 
-                self.alphas[iout, :] = alphas
+                self.alpha[iout, :] = alpha
 
                 # Stars
                 self.Ns[iout, :] = Ns
@@ -870,17 +750,16 @@ class EvolvedMF:
 
                 self.ms[iout, :] = Ms / Ns
 
-                # Edges of star mass bins
-                self.mes[iout, :] = mes
-
                 # Remnants
-                self.Nr[iout, :] = Nr
-                self.Mr[iout, :] = Mr
+                for c in range(len(Nr)):  # Each remnant class
 
-                # Precise mr only matters when Nr > 0
-                mr = 0.5 * (self.me[1:] + self.me[0:-1])
-                mr[Nr > 0] = Mr[Nr > 0] / Nr[Nr > 0]
-                self.mr[iout, :] = mr
+                    self.Nr[c][iout, :] = Nr[c]
+                    self.Mr[c][iout, :] = Mr[c]
 
-                # Remnant types
-                self.rem_types = rem_types
+                    # Precise mr only matters when Nr > 0
+                    mr = 0.5 * np.sum(self.massbins.bins[c + 1], axis=0)
+
+                    rem_mask = Nr[c] > 0
+                    mr[rem_mask] = Mr[c][rem_mask] / Nr[c][rem_mask]
+
+                    self.mr[c][iout, :] = mr

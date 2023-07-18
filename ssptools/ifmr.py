@@ -49,6 +49,7 @@ class IFMR:
         # Black Holes
         # ------------------------------------------------------------------
 
+        # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
         bhifmr = np.loadtxt(get_data(f"sse/MP_FEH{self.FeH_BH:+.2f}.dat"))
 
         # Grab only stellar type 14
@@ -78,9 +79,7 @@ class IFMR:
         # TODO polynomial starts misbehaving far above 0, but don't know where
         self.WD_mi = bounds(0.0, WD_m_max)
 
-        # TODO not technically correct due to possible bump in top of polynomial
-        #   Should really stop using polynomials and use interpolated grid.
-        self.WD_mf = bounds(0.0, self.predict(WD_m_max))
+        self.WD_mf = bounds(0.0, self._get_WD_bounds(WD_m_max))
         self.mWD_max = self.WD_mf.upper
 
         # ------------------------------------------------------------------
@@ -130,6 +129,20 @@ class IFMR:
 
         else:
             self.FeH_BH = self.FeH
+
+    def _get_WD_bounds(self, max_mi):
+        '''compute the WD_mf bounds as best we can from the polynomial'''
+
+        # Compute the max/mins taking derivative of polynomial
+        WD_minmax = self._WD_spline.deriv().roots().real
+
+        # Restrict x (initial mass) to between 1 and max_mi
+        # TODO lower 1 is required to avoid polynomial effects, but is arbitrary
+        #   really it won't matter, maximum will always be far above 1
+        restr = (1. < WD_minmax) & (WD_minmax <= max_mi)
+
+        # Determine the maximum WD final mass (including upper bound in case)
+        return self._WD_spline(np.r_[WD_minmax[restr], max_mi]).max()
 
     def predict_type(self, m_in):
         '''Predict the remnant type (WD, NS, BH) given the initial mass(es)'''
