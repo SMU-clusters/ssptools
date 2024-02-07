@@ -12,11 +12,11 @@ from .masses import MassBins, Pk
 # TODO optionally support units for some things
 
 
-__all__ = ['EvolvedMF']
+__all__ = ['EvolvedMF', 'EvolvedMFWithBH']
 
 
 class EvolvedMF:
-    r'''Evolve an IMF to a present-day mass function at a given age
+    r'''Evolve an IMF to a present-day mass function at a given age.
 
     Evolves an arbitrary N-component power law initial mass function (IMF)
     to a binned present-day mass function (PDMF) at a given set of ages, and
@@ -729,6 +729,153 @@ class EvolvedMF:
 
                     # calculate total mass we want to eject
                     M_eject = Mr.BH.sum() * (1.0 - self.BH_ret_dyn)
+
+                    # First remove mass from all bins by natal kicks, if desired
+                    if self.natal_kicks:
+                        *_, kicked = self._natal_kick_BH(Mr.BH, Nr.BH)
+                        M_eject -= kicked
+
+                    # Remove dynamical BH ejections
+                    self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
+
+                # ----------------------------------------------------------
+                # save values into output arrays
+                # ----------------------------------------------------------
+
+                self.alpha[iout, :] = alpha
+
+                # Stars
+                self.Ns[iout, :] = Ns
+                self.Ms[iout, :] = Ms
+
+                self.ms[iout, :] = Ms / Ns
+
+                # Remnants
+                for c in range(len(Nr)):  # Each remnant class
+
+                    self.Nr[c][iout, :] = Nr[c]
+                    self.Mr[c][iout, :] = Mr[c]
+
+                    # Precise mr only matters when Nr > 0
+                    mr = 0.5 * np.sum(self.massbins.bins[c + 1], axis=0)
+
+                    rem_mask = Nr[c] > 0
+                    mr[rem_mask] = Mr[c][rem_mask] / Nr[c][rem_mask]
+
+                    self.mr[c][iout, :] = mr
+
+
+class EvolvedMFWithBH(EvolvedMF):
+    '''
+    Subclass of EvolvedMF allowing for an alternate BH prescription, initialized
+    with a certain amount of final BHs and with BH ejections made to match it,
+    rather than the retention fraction
+
+    M_BH should be same size as tout.
+    '''
+
+    def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot, M_BH,
+                 *args, **kwargs):
+
+        self._MBH_target = np.atleast_1d(M_BH)
+
+        if self._MBH_target.size != np.atleast_1d(tout).size:
+            mssg = "`M_BH` must be same size as desired output times `tout`"
+            raise ValueError(mssg)
+
+        # leave BH_ret_dyn as default, will be ignored. BH_ret_int is fine
+        super().__init__(m_breaks, a_slopes, nbins, FeH, tout, Ndot,
+                         *args, **kwargs)
+
+        # reset it, in case someone's curious, based on the final tout
+        # self.BH_ret_dyn = self.BH / self.M.sum()  actually kinda hard to do?
+
+    def _evolve(self):
+        '''Main population evolution function, to be called on init'''
+
+        # ------------------------------------------------------------------
+        # Initialize output arrays
+        # ------------------------------------------------------------------
+
+        self.nout = len(self.tout)
+
+        # Stars
+
+        self.Ns, self.alpha, self.Nr, self.Mr = self.massbins.blanks(
+            'empty', extra_dims=[self.nout], packed=False, grouped_rem=True
+        )
+
+        self.Ms, self.ms = np.empty_like(self.Ns), np.empty_like(self.Ns)
+        self.mr = self.Nr._make(np.empty_like(x) for x in self.Nr)
+
+        self.rem_types = np.repeat(self.massbins.nbin._fields[1:],
+                                   self.massbins.nbin[1:])
+
+        # ------------------------------------------------------------------
+        # Initialise ODE solver
+        # ------------------------------------------------------------------
+
+        t0 = 0.0
+        y0 = self.massbins.initial_values()
+
+        sol = ode(self._derivs)
+        sol.set_integrator("dopri5", max_step=1e12, atol=1e-5, rtol=1e-5)
+        sol.set_initial_value(y0, t=t0)
+
+        # ------------------------------------------------------------------
+        # Evolve
+        # ------------------------------------------------------------------
+
+        for ti in self.t:
+
+            # --------------------------------------------------------------
+            # Integrate ODE solver
+            # --------------------------------------------------------------
+
+            sol.integrate(ti)
+
+            # --------------------------------------------------------------
+            # if this time is in the desired output times extract solutions
+            # --------------------------------------------------------------
+
+            if ti in self.tout:
+
+                iout = np.where(self.tout == ti)[0][0]
+
+                # ----------------------------------------------------------
+                # Extract the N, M and alphas for stars and remnants
+                # ----------------------------------------------------------
+
+                Ns, alpha, Nr, Mr = self.massbins.unpack_values(
+                    sol.y, grouped_rem=True
+                )
+
+                bins_MS = self.massbins.turned_off_bins(self.compute_mto(ti))
+
+                As = Ns / Pk(alpha, 1, *bins_MS)
+                Ms = As * Pk(alpha, 2, *bins_MS)
+
+                # ----------------------------------------------------------
+                # Eject BHs, first through natal kicks, then dynamically
+                # ----------------------------------------------------------
+                # TODO really feels like this should be done during the
+                #   evolution/derivs? At least for the natal kicks.
+                # TODO due to rem_classes tuple, ejections done in place, which
+                #   is not ideal
+
+                # Check if any BH have been created
+                if ti > self.compute_tms(self.IFMR.BH_mi.lower):
+
+                    MBH_target = self._MBH_target[iout]
+
+                    # calculate total mass we want to eject
+                    M_eject = Mr.BH.sum() - MBH_target
+
+                    if M_eject < 0:
+                        mssg = (f"Target `M_BH` ({MBH_target}) is greater than "
+                                f"all BH mass formed ({Mr.BH.sum():.3f}). "
+                                f"Reduce `M_BH` or alter IMF slopes.")
+                        raise ValueError(mssg)
 
                     # First remove mass from all bins by natal kicks, if desired
                     if self.natal_kicks:
