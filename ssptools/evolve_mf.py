@@ -518,6 +518,8 @@ class EvolvedMF:
         Determines the effects of BH natal-kicks based on the fallback fraction
         and escape velocity of this population.
 
+        Both input arrays are modified *in place*, as well as returned.
+
         Parameters
         ----------
         Mr_BH : ndarray
@@ -587,6 +589,8 @@ class EvolvedMF:
         BHs from a cluster.
         Proceeds from the heaviest BH bins to the lightest, removing all mass
         in each bin until the desired amount of ejected mass is reached.
+
+        Both input arrays are modified *in place*, as well as returned.
 
         Parameters
         ----------
@@ -771,16 +775,16 @@ class EvolvedMFWithBH(EvolvedMF):
     with a certain amount of final BHs and with BH ejections made to match it,
     rather than the retention fraction
 
-    M_BH should be same size as tout.
+    f_BH should be same size as tout.
     '''
 
-    def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot, M_BH,
+    def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot, f_BH,
                  *args, **kwargs):
 
-        self._MBH_target = np.atleast_1d(M_BH)
+        self._fBH_target = np.atleast_1d(f_BH)
 
-        if self._MBH_target.size != np.atleast_1d(tout).size:
-            mssg = "`M_BH` must be same size as desired output times `tout`"
+        if self._fBH_target.size != np.atleast_1d(tout).size:
+            mssg = "`f_BH` must be same size as desired output times `tout`"
             raise ValueError(mssg)
 
         # leave BH_ret_dyn as default, will be ignored. BH_ret_int is fine
@@ -789,6 +793,103 @@ class EvolvedMFWithBH(EvolvedMF):
 
         # reset it, in case someone's curious, based on the final tout
         # self.BH_ret_dyn = self.BH / self.M.sum()  actually kinda hard to do?
+
+    def _dyn_eject_BH(self, Mr_BH, Nr_BH, Mtot, fBH_target):
+        '''Determine and remove BHs, to represent dynamical ejections.
+
+        Determines and removes an amount of BHs from the BH mass bins, designed
+        to reflect the effects of dynamical ejections of centrally concentrated
+        BHs from a cluster.
+        Proceeds from the heaviest BH bins to the lightest, removing all mass
+        in each bin until the desired total BH mass fraction is reached.
+
+        The target mass fraction *must* be less than the current
+        (`Mr_BH.sum() / Mtot`) mass fraction, as mass will only be removed.
+
+        Both input arrays are modified *in place*, as well as returned.
+
+        Parameters
+        ----------
+        Mr_BH : ndarray
+            Array[nbin] of the total initial masses of black holes in each
+            BH mass bin.
+
+        Nr_BH : ndarray
+            Array[nbin] of the total initial numbers of black holes in each
+            BH mass bin.
+
+        Mtot : float
+            The total cluster mass, before ejections. Needed to compute the
+            current f_BH as BHs are removed.
+
+        fBH_target : float
+            The target BH mass fraction.
+
+        Returns
+        -------
+        Mr_BH : ndarray
+            Array[nbin] of the total final masses of black holes in each
+            BH mass bin, after dynamical ejections
+
+        Nr_BH : ndarray
+            Array[nbin] of the total final numbers of black holes in each
+            BH mass bin, after dynamical ejections
+        '''
+
+        def Mrem(Δfbh, Mb, Mt):
+            '''Compute the amount of BH mass to remove required to reach Δfbh'''
+            return (Mt**2 * Δfbh) / ((Mt * (1 + Δfbh)) - Mb)
+
+        # Remove BH starting from Heavy to Light
+        j = Mr_BH.size
+
+        MBH = Mr_BH.sum()
+
+        while fBH_target < (fBH_current := MBH / Mtot):
+            j -= 1
+
+            print(f'kicking[{j=}] {fBH_current=}')
+
+            # no clue how this would even happen, I guess if fBH<0??
+            # if j < 0:
+            #     mssg = 'Invalid `M_eject`, must be less than total Mr_BH'
+            #     raise ValueError(mssg)
+
+            # Skip empty bins
+            if Nr_BH[j] < self.Nmin:
+                continue
+
+            # Removed entirety of this bin
+            if ((MBH - Mr_BH[j]) / (Mtot - Mr_BH[j])) >= fBH_target:
+
+                print('    kicking entire bin')
+
+                MBH -= Mr_BH[j]
+                Mtot -= Mr_BH[j]
+
+                Mr_BH[j] = 0
+                Nr_BH[j] = 0
+
+                continue
+
+            # Remove required fraction of the last affected bin
+            else:
+
+                Δfreq = fBH_current - fBH_target
+                Mreq = Mrem(Δfreq, MBH, Mtot)
+
+                print(f'    require kicking final {Δfreq} ({Mreq=})')
+
+                mr_BH_j = Mr_BH[j] / Nr_BH[j]
+
+                Mr_BH[j] -= Mreq
+                Nr_BH[j] -= Mreq / (mr_BH_j)
+
+                break
+
+        print(f'Final result {Mr_BH.sum() / (Mtot-Mreq)}')
+
+        return Mr_BH, Nr_BH
 
     def _evolve(self):
         '''Main population evolution function, to be called on init'''
@@ -858,32 +959,44 @@ class EvolvedMFWithBH(EvolvedMF):
                 # ----------------------------------------------------------
                 # Eject BHs, first through natal kicks, then dynamically
                 # ----------------------------------------------------------
-                # TODO really feels like this should be done during the
-                #   evolution/derivs? At least for the natal kicks.
-                # TODO due to rem_classes tuple, ejections done in place, which
-                #   is not ideal
 
                 # Check if any BH have been created
                 if ti > self.compute_tms(self.IFMR.BH_mi.lower):
 
-                    MBH_target = self._MBH_target[iout]
+                    fBH_target = self._fBH_target[iout]
+
+                    # fBH_current = Mr.BH.sum() / (np.c_[Mr].sum() + Ms.sum())
 
                     # calculate total mass we want to eject
-                    M_eject = Mr.BH.sum() - MBH_target
-
-                    if M_eject < 0:
-                        mssg = (f"Target `M_BH` ({MBH_target}) is greater than "
-                                f"all BH mass formed ({Mr.BH.sum():.3f}). "
-                                f"Reduce `M_BH` or alter IMF slopes.")
-                        raise ValueError(mssg)
+                    # M_eject = Mr.BH.sum() - MBH_target
 
                     # First remove mass from all bins by natal kicks, if desired
+                    #  Do it first because we dont control the exact amount so
+                    #  this could make the target fBH invalid afterwards
                     if self.natal_kicks:
-                        *_, kicked = self._natal_kick_BH(Mr.BH, Nr.BH)
-                        M_eject -= kicked
+                        # *_, kicked = self._natal_kick_BH(Mr.BH, Nr.BH)
+                        # M_eject -= kicked
+                        self._natal_kick_BH(Mr.BH, Nr.BH)  # do it all in-place
+
+                    Mtot = np.r_[Mr].sum() + Ms.sum()
+                    fBH_current = Mr.BH.sum() / (Mtot)
+
+                    # can only make fBH go down by removing BHs
+                    if fBH_target > fBH_current:
+                        mssg = (
+                            f"Target `f_BH` ({fBH_target}) is greater than "
+                            f"f_BH formed at t={ti:.1f} ({fBH_current:.3f}; "
+                            f"after natal kicks). Reduce `f_BH`, alter IMF "
+                            f"slopes or turn off natal kicks."
+                        )
+                        raise ValueError(mssg)
 
                     # Remove dynamical BH ejections
-                    self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
+                    #   (note different signature to EvolvedMF)
+                    self._dyn_eject_BH(Mr.BH, Nr.BH, Mtot=Mtot,
+                                       fBH_target=fBH_target)
+
+                    print(f'After kicks: fBH = {Mr.BH.sum() / (np.r_[Mr].sum() + Ms.sum())}')
 
                 # ----------------------------------------------------------
                 # save values into output arrays
