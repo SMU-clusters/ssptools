@@ -899,7 +899,7 @@ class EvolvedMFWithBH(EvolvedMF):
 
         MBH = Mr_BH.sum()
 
-        while fBH_target < (fBH_current := MBH / Mtot):
+        while (fBH_target < (fBH_current := MBH / Mtot)) and (j >= 0):
             j -= 1
 
             # Skip empty bins
