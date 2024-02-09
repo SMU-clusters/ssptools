@@ -207,6 +207,83 @@ class TestBHEvolution:
             self.base_emf._dyn_eject_BH(Mi, Ni, M_eject=M_eject_overflow)
 
 
+class TestfBHInit:
+
+    @pytest.fixture()
+    def Mtot(self):
+        return 100.
+
+    @pytest.fixture()
+    def Mi(self):
+        return np.array([10., 10., 10.])
+
+    @pytest.fixture()
+    def Ni(self):
+        return np.array([20., 10., 5.])
+
+    # ----------------------------------------------------------------------
+    # Test target f_BH version of BH dynamical ejection routines
+    # ----------------------------------------------------------------------
+
+    emf_kw = DEFAULT_KWARGS.copy() | {'tout': [100.]}
+
+    @pytest.mark.parametrize(
+        'fBH_target, expected',
+        [
+            (1, np.stack((np.array([10, 10, 10.]), np.array([20, 10, 5.])))),
+            (0.2, np.stack((np.array([10, 7.5, 0.]), np.array([20, 7.5, 0.])))),
+            (0.125, np.stack((np.array([10, 0., 0.]), np.array([20, 0., 0.])))),
+            (0.0, np.stack((np.array([0., 0., 0.]), np.array([0., 0., 0.])))),
+        ],
+    )
+    def test_dyn_ej_quantities(self, Mi, Ni, Mtot, fBH_target, expected):
+
+        emf = evolve_mf.EvolvedMFWithBH(f_BH=0, **self.emf_kw)
+
+        Mf, Nf = emf._dyn_eject_BH(Mi, Ni, Mtot=Mtot, fBH_target=fBH_target)
+
+        assert np.stack((Mf, Nf)) == pytest.approx(expected)
+
+    # ----------------------------------------------------------------------
+    # Test f_BH init and final mass fraction
+    # ----------------------------------------------------------------------
+
+    def test_fBH_overflow(self):
+
+        f_BH = 1.1
+
+        with pytest.raises(ValueError):
+            evolve_mf.EvolvedMFWithBH(f_BH=f_BH, **self.emf_kw)
+
+    def test_fBH_underflow(self):
+
+        f_BH = -0.1
+
+        with pytest.raises(ValueError):
+            evolve_mf.EvolvedMFWithBH(f_BH=f_BH, **self.emf_kw)
+
+    @pytest.mark.parametrize('fBH_target', [0.01, 0.0])
+    def test_final_fBH_full(self, fBH_target):
+
+        mf = evolve_mf.EvolvedMFWithBH(f_BH=fBH_target, **self.emf_kw)
+
+        mf.Nmin = 0.0  # avoid those pesky small-N bins
+
+        final_fBH = mf.M[mf.types == 'BH'].sum() / (mf.M).sum()
+
+        assert fBH_target == pytest.approx(final_fBH)
+
+    @pytest.mark.parametrize('fBH_target', [0.01, 0.0])
+    def test_final_fBH(self, fBH_target):
+
+        mf = evolve_mf.EvolvedMFWithBH(f_BH=fBH_target, **self.emf_kw)
+
+        final_fBH = mf.M[mf.types == 'BH'].sum() / (mf.M).sum()
+
+        # Even though it's not perfect, don't let it get too far off.
+        assert fBH_target == pytest.approx(final_fBH, rel=0.001)
+
+
 # class TestMassEvolution:
 class TestDerivatives:
 
