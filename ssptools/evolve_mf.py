@@ -795,9 +795,6 @@ class EvolvedMFWithBH(EvolvedMF):
         super().__init__(m_breaks, a_slopes, nbins, FeH, tout, Ndot,
                          *args, **kwargs)
 
-        # reset it, in case someone's curious, based on the final tout
-        # self.BH_ret_dyn = self.BH / self.M.sum()  actually kinda hard to do?
-
     def _dyn_eject_BH(self, Mr_BH, Nr_BH, Mtot, fBH_target):
         '''Determine and remove BHs, to represent dynamical ejections.
 
@@ -963,7 +960,8 @@ class EvolvedMFWithBH(EvolvedMF):
                         self._natal_kick_BH(Mr.BH, Nr.BH)  # do it all in-place
 
                     Mtot = np.r_[Mr].sum() + Ms.sum()
-                    fBH_current = Mr.BH.sum() / (Mtot)
+                    Mbhtot = Mr.BH.sum()
+                    fBH_current = Mbhtot / Mtot
 
                     # can only make fBH go down by removing BHs
                     if fBH_target > fBH_current:
@@ -980,7 +978,8 @@ class EvolvedMFWithBH(EvolvedMF):
                     self._dyn_eject_BH(Mr.BH, Nr.BH, Mtot=Mtot,
                                        fBH_target=fBH_target)
 
-                    print(f'After kicks: fBH = {Mr.BH.sum() / (np.r_[Mr].sum() + Ms.sum())}')
+                    # Reset, in case someone's curious
+                    self.BH_ret_dyn = Mr.BH.sum() / Mbhtot
 
                 # ----------------------------------------------------------
                 # save values into output arrays
