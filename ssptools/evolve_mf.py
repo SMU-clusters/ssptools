@@ -787,6 +787,10 @@ class EvolvedMFWithBH(EvolvedMF):
             mssg = "`f_BH` must be same size as desired output times `tout`"
             raise ValueError(mssg)
 
+        if np.any(self._fBH_target < 0):
+            mssg = f"`f_BH` ({self._fBH_target}) must be greater than 0"
+            raise ValueError(mssg)
+
         # leave BH_ret_dyn as default, will be ignored. BH_ret_int is fine
         super().__init__(m_breaks, a_slopes, nbins, FeH, tout, Ndot,
                          *args, **kwargs)
@@ -848,21 +852,12 @@ class EvolvedMFWithBH(EvolvedMF):
         while fBH_target < (fBH_current := MBH / Mtot):
             j -= 1
 
-            print(f'kicking[{j=}] {fBH_current=}')
-
-            # no clue how this would even happen, I guess if fBH<0??
-            # if j < 0:
-            #     mssg = 'Invalid `M_eject`, must be less than total Mr_BH'
-            #     raise ValueError(mssg)
-
             # Skip empty bins
             if Nr_BH[j] < self.Nmin:
                 continue
 
             # Removed entirety of this bin
             if ((MBH - Mr_BH[j]) / (Mtot - Mr_BH[j])) >= fBH_target:
-
-                print('    kicking entire bin')
 
                 MBH -= Mr_BH[j]
                 Mtot -= Mr_BH[j]
@@ -878,16 +873,12 @@ class EvolvedMFWithBH(EvolvedMF):
                 Δfreq = fBH_current - fBH_target
                 Mreq = Mrem(Δfreq, MBH, Mtot)
 
-                print(f'    require kicking final {Δfreq} ({Mreq=})')
-
                 mr_BH_j = Mr_BH[j] / Nr_BH[j]
 
                 Mr_BH[j] -= Mreq
                 Nr_BH[j] -= Mreq / (mr_BH_j)
 
                 break
-
-        print(f'Final result {Mr_BH.sum() / (Mtot-Mreq)}')
 
         return Mr_BH, Nr_BH
 
@@ -965,17 +956,10 @@ class EvolvedMFWithBH(EvolvedMF):
 
                     fBH_target = self._fBH_target[iout]
 
-                    # fBH_current = Mr.BH.sum() / (np.c_[Mr].sum() + Ms.sum())
-
-                    # calculate total mass we want to eject
-                    # M_eject = Mr.BH.sum() - MBH_target
-
                     # First remove mass from all bins by natal kicks, if desired
                     #  Do it first because we dont control the exact amount so
                     #  this could make the target fBH invalid afterwards
                     if self.natal_kicks:
-                        # *_, kicked = self._natal_kick_BH(Mr.BH, Nr.BH)
-                        # M_eject -= kicked
                         self._natal_kick_BH(Mr.BH, Nr.BH)  # do it all in-place
 
                     Mtot = np.r_[Mr].sum() + Ms.sum()
