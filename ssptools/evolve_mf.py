@@ -24,54 +24,59 @@ class EvolvedMF:
 
     # TODO add more in-depth explanation or references to actual algorithm here
 
-    Warning: Currently only supports N=3 IMF components
+    Warning: Currently only supports N=3 IMF components.
 
     Parameters
     ----------
     m_breaks : list of float
-        IMF break-masses (including outer bounds; size N+1)
+        IMF break-masses (including outer bounds; size N+1).
 
     a_slopes : list of float
-        IMF slopes α (size N)
+        IMF slopes α (size N).
 
     nbins : list of int
         Number of mass bins in each regime of the IMF, as defined by m_breaks
-        (size N)
+        (size N).
 
     FeH : float
-        Metallicity, in solar fraction [Fe/H]
+        Metallicity, in solar fraction [Fe/H].
 
     tout : list of int
         Times, in years, at which to output PDMF. Defines the shape of many
-        outputted attributes
+        outputted attributes.
 
     Ndot : float
         Represents rate of change of the number of stars N over time, in stars
         per Myr. Regulates low-mass object depletion (ejection) due to dynamical
-        evolution
+        evolution.
 
     N0 : int, optional
-        Total initial number of stars, over all bins. Defaults to 5e5 stars
+        Total initial number of stars, over all bins. Defaults to 5e5 stars.
 
     tcc : float, optional
-        Core collapse time, in years. Defaults to 0, effectively being ignored
+        Core collapse time, in years. Defaults to 0, effectively being ignored.
 
     NS_ret : float, optional
-        Neutron star retention fraction (0 to 1). Defaults to 0.1 (10%)
+        Neutron star retention fraction (0 to 1). Defaults to 0.1 (10%).
 
     BH_ret_int : float, optional
-        Initial black hole retention fraction (0 to 1). Defaults to 1 (100%)
+        Initial black hole retention fraction (0 to 1). Defaults to 1 (100%).
 
     BH_ret_dyn : float, optional
-        Dynamical black hole retention fraction (0 to 1). Defaults to 1 (100%)
+        Dynamical black hole retention fraction (0 to 1), including both
+        dynamical ejections and natal kicks. Defaults to 1 (100%).
 
     natal_kicks : bool, optional
         Whether to account for natal kicks in the BH dynamical retention.
-        Defaults to False
+        Defaults to False.
 
     vesc : float, optional
         Initial cluster escape velocity, in km/s, for use in the computation of
-        BH natal kick effects. Defaults to 90 km/s
+        BH natal kick effects. Defaults to 90 km/s.
+
+    binning_method : {'default', 'split_log', 'split_linear'}, optional
+        The spacing method to use when constructing the mass bins.
+        See `masses.MassBins` for more information.
 
     md : float, optional
         Depletion mass, below which stars are preferentially disrupted during
@@ -83,46 +88,46 @@ class EvolvedMF:
     ----------
 
     nbin : int
-        Total number of bins (sum of nbins parameter)
+        Total number of bins (sum of nbins parameter).
 
     nout : int
-        Total number of output times (len of tout parameter)
+        Total number of output times (len of tout parameter).
 
     alphas : ndarray
         Array[nout, nbin] of  PDMF slopes. If Ndot = 0, this is defined entirely
-        by the IMF
+        by the IMF.
 
     Ns : ndarray
         Array[nout, nbin] of the total number of (main sequence) stars in each
-        mass bin
+        mass bin.
 
     Ms : ndarray
         Array[nout, nbin] of the total mass of (main sequence) stars in each
-        mass bin
+        mass bin.
 
     ms : ndarray
         Array[nout, nbin] of the individual mass of (main sequence) stars in
-        each mass bin, as defined by Ms / Ns
+        each mass bin, as defined by Ms / Ns.
 
     mes : ndarray
         Array[nout, nbin + 1] representing the mass bin edges, defined by the
         m_breaks and nbins parameters. Note that ms *does not* necessarily fall
-        in the middle of these edges
+        in the middle of these edges.
 
     Nr : ndarray
-        Array[nout, nbin] of the total number of remnants in each mass bin
+        Array[nout, nbin] of the total number of remnants in each mass bin.
 
     Mr : ndarray
-        Array[nout, nbin] of the total mass of remnants in each mass bin
+        Array[nout, nbin] of the total mass of remnants in each mass bin.
 
     mr : ndarray
         Array[nout, nbin] of the individual mass of remnants in
-        each mass bin, as defined by Mr / Nr
+        each mass bin, as defined by Mr / Nr.
 
     rem_types : ndarray
         Array[nout, nbin] of 2-character strings representing the remnant types
         found in each mass bin of the remnant (Mr, Nr, mr) arrays. "WD" = white
-        dwarfs, "NS" = neutron stars, "BH" = black holes
+        dwarfs, "NS" = neutron stars, "BH" = black holes.
 
     M : ndarray
         Array containing the total mass in all non-empty mass bins, including
@@ -144,7 +149,7 @@ class EvolvedMF:
     types : ndarray
         Array of 2-character strings representing the object type of the
         corresponding bins of the M, N and m properties. "MS" = main sequence
-        stars, "WD" = white dwarfs, "NS" = neutron stars, "BH" = black holes
+        stars, "WD" = white dwarfs, "NS" = neutron stars, "BH" = black holes.
     '''
 
     @property
@@ -770,12 +775,60 @@ class EvolvedMF:
 
 
 class EvolvedMFWithBH(EvolvedMF):
-    '''
-    Subclass of EvolvedMF allowing for an alternate BH prescription, initialized
-    with a certain amount of final BHs and with BH ejections made to match it,
-    rather than the retention fraction
+    r'''Evolve an IMF to a present-day mass function at a given age and f_BH.
 
-    f_BH should be same size as tout.
+    Subclass of `EvolvedMF`, evolving an arbitrary power law initial mass
+    function (IMF) to a binned present-day mass function (PDMF) at a given set
+    of ages, with an alternative BH prescription, allowing for a specified
+    final BH mass fraction `f_BH`, rather than a BH retention fraction
+    dependant on the amount of BHs created from the IMF.
+
+    The given `f_BH` must be a valid fraction, between 0-1, and must be less
+    than the mass fraction of BHs formed initially from the (and optionally
+    after natal kicks), as BHs can only be removed through dynamical ejections.
+
+    Parameters
+    ----------
+    m_breaks : list of float
+        IMF break-masses (including outer bounds; size N+1).
+
+    a_slopes : list of float
+        IMF slopes α (size N).
+
+    nbins : list of int
+        Number of mass bins in each regime of the IMF, as defined by m_breaks
+        (size N).
+
+    FeH : float
+        Metallicity, in solar fraction [Fe/H].
+
+    tout : list of int
+        Times, in years, at which to output PDMF. Defines the shape of many
+        outputted attributes.
+
+    Ndot : float
+        Represents rate of change of the number of stars N over time, in stars
+        per Myr. Regulates low-mass object depletion (ejection) due to dynamical
+        evolution.
+
+    f_BH : float
+        The desired final BH mass fraction (0 to 1).
+        If more than one output time is specified, a list of floats with size
+        `nout` is required.
+
+    *args, **kwargs
+        All remaining arguments are passed to `EvolvedMF`. Note that passing
+        a `BH_ret_dyn` will have no effect on the BHs.
+
+    Notes
+    -----
+    The final `f_BH` as determined by
+    `self.M[self.types=='BH'].sum() / self.M.sum()` may be very slightly
+    (ε < 1e-3) different from the requested `f_BH`, simply due to the removal
+    of the nearly-empty bins in the creation of the `M` array.
+
+    This can be remedied by setting `self.Nmin = 0`, though this is generally
+    not recommended as bins with N < 1 are physically meaningless.
     '''
 
     def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot, f_BH,
