@@ -1082,8 +1082,7 @@ class InitialBHPopulation:
     def f_BH(self, M_cluster):
         return self.Mtot / M_cluster
 
-    def __init__(self, M_BH, N_BH, BH_bins, FeH, *, vesc=90., natal_kicks=True,
-                 age=None):
+    def __init__(self, M_BH, N_BH, BH_bins, FeH, *, vesc=90., natal_kicks=True):
 
         self.Nmin = 0.1
         self.vesc = vesc
@@ -1100,7 +1099,6 @@ class InitialBHPopulation:
         self.N = N_BH
 
         self.bins = BH_bins
-        self.age = age
 
         # get BH_mr
         zmsk = self.N > 0  # Precise mr only matters when Nr > 0
@@ -1218,8 +1216,21 @@ class InitialBHPopulation:
 
         N_BH, M_BH = sol.y[nbin_MS:nbin_MS + nbin_BH], sol.y[nbin_MS + nbin_BH:]
 
-        return cls(M_BH, N_BH, massbins.bins.BH, age=final_age,
-                   FeH=FeH, natal_kicks=natal_kicks, vesc=vesc)
+        out = cls(M_BH, N_BH, massbins.bins.BH,
+                  FeH=FeH, natal_kicks=natal_kicks, vesc=vesc)
+
+        out.age = final_age
+
+        Ns = sol.y[:nbin_MS]
+
+        alphas = np.repeat(massbins.a, massbins._nbin_MS_each)
+        As = Ns / Pk(alphas, 1, *massbins.bins.MS)
+        Ms = As * Pk(alphas, 2, *massbins.bins.MS)
+
+        out.Ns_lost = init_N.MS.sum() - Ns.sum()
+        out.Ms_lost = init_M.MS.sum() - Ms.sum()
+
+        return out
 
     @classmethod
     def from_BHMF(cls, m_breaks, a_slopes, nbins, FeH, N0=5e5, *,
