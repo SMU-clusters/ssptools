@@ -1220,3 +1220,56 @@ class InitialBHPopulation:
 
         return cls(M_BH, N_BH, massbins.bins.BH, age=final_age,
                    FeH=FeH, natal_kicks=natal_kicks, vesc=vesc)
+
+    @classmethod
+    def from_BHMF(cls, m_breaks, a_slopes, nbins, FeH, N0=5e5, *,
+                  natal_kicks=True, vesc=90.):
+        '''init from a given BH MF power law slopes and break masses
+        supports a single or broken (2 component) power law
+        '''
+
+        a, mb = a_slopes, m_breaks
+
+        if len(a) == 2:
+
+            if isinstance(nbins, int):
+                from .masses import _divide_bin_sizes
+                nbins = _divide_bin_sizes(nbins, 2)
+
+            A2 = (
+                Pk(a[1], 1, mb[1], mb[2])
+                + (mb[1] ** (a[1] - a[0]) * Pk(a[0], 1, mb[0], mb[1]))
+            )**(-1)
+
+            A1 = A2 * mb[1]**(a[1] - a[0])
+
+            A = N0 * np.repeat([A1, A2], nbins)
+
+            bin_sides = np.r_[
+                np.geomspace(mb[0], mb[1], nbins[0] + 1),
+                np.geomspace(mb[1], mb[2], nbins[1] + 1)[1:]
+            ]
+
+        elif len(a) == 1:
+
+            A1 = Pk(a[0], 1, mb[0], mb[1])**(-1)
+
+            A = N0 * np.repeat([A1], nbins)
+
+            bin_sides = np.geomspace(mb[0], mb[1], nbins + 1)
+
+        else:
+            mssg = "`from_BHMF` only supports one or two component power laws"
+            raise ValueError(mssg)
+
+        bins = mbin(bin_sides[:-1], bin_sides[1:])
+
+        # Expand array of IMF slopes to all mass bins
+        alpha = np.repeat(a, nbins)
+
+        # Set initial star bins based on IMF
+        N_BH = A * Pk(alpha, 1, *bins)
+        M_BH = A * Pk(alpha, 2, *bins)
+
+        return cls(M_BH, N_BH, bins, FeH=FeH,
+                   natal_kicks=natal_kicks, vesc=vesc)
