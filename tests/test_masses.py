@@ -166,7 +166,7 @@ class TestMassIndices:
             (1., 'MS', 2),
             (1., 'WD', 2),
             (1., 'NS', 0),
-            (1., 'BH', 0),
+            (DEFAULT_KWARGS['ifmr'].BH_mf.lower, 'BH', 0),
             (99., 'BH', 1),
             (2., masses.mbin(*np.array([[1, 2, 3], [2, 3, 4]])), 1)
         ]
