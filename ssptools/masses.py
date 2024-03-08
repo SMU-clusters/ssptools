@@ -263,6 +263,7 @@ class MassBins:
 
             nbin_WD = WD_mask.sum()
 
+            # TODO fails if m_break[0] < ifmr.WD_mf.upper
             bins_WD = mbin(bins_MS.lower[WD_mask].copy(),
                            bins_MS.upper[WD_mask].copy())
             bins_WD.upper[-1] = ifmr.WD_mf.upper

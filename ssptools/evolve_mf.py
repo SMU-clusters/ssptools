@@ -6,13 +6,13 @@ from scipy.integrate import ode
 from scipy.interpolate import interp1d, UnivariateSpline
 
 from .ifmr import IFMR, get_data
-from .masses import MassBins, Pk
+from .masses import MassBins, Pk, mbin
 
 
 # TODO optionally support units for some things
 
 
-__all__ = ['EvolvedMF', 'EvolvedMFWithBH']
+__all__ = ['EvolvedMF', 'EvolvedMFWithBH', 'InitialBHPopulation']
 
 
 class EvolvedMF:
@@ -1059,3 +1059,164 @@ class EvolvedMFWithBH(EvolvedMF):
                     mr[rem_mask] = Mr[c][rem_mask] / Nr[c][rem_mask]
 
                     self.mr[c][iout, :] = mr
+
+
+class InitialBHPopulation:
+    '''class which generates an initial BH population based on an IMF.
+
+    Based on an IMF (or just a BH MF) generates the full set of BH mass bins
+    which would be formed in total (i.e. the age all stars that are going to
+    make BHs evolve off the MS (save this age too)), and account for natal
+    kicks.
+
+    Parameters (plz dont init from this, just use classmethods)
+    ----------
+    BH_Mr : array of total BH mass in each mass bin
+    BH_Nr : array of total BH num in each bin
+    BH_bins : `mbin` of BH mass bins
+    '''
+
+    _natal_kick_BH = EvolvedMF._natal_kick_BH
+    _get_retention_frac = EvolvedMF._get_retention_frac
+
+    def f_BH(self, M_cluster):
+        return self.Mtot / M_cluster
+
+    def __init__(self, M_BH, N_BH, BH_bins, FeH, *, vesc=90., natal_kicks=True,
+                 age=None):
+
+        self.Nmin = 0.1
+        self.vesc = vesc
+
+        if natal_kicks:
+            # load in the ifmr data to interpolate fb from mr
+            feh_path = get_data(f"sse/MP_FEH{IFMR(FeH).FeH_BH:+.2f}.dat")
+            self.fb_grid = np.loadtxt(feh_path, usecols=(1, 3), unpack=True)
+
+            # Do the natal kicks, in place
+            self._natal_kick_BH(M_BH, N_BH)
+
+        self.M = M_BH
+        self.N = N_BH
+
+        self.bins = BH_bins
+        self.age = age
+
+        # get BH_mr
+        zmsk = self.N > 0  # Precise mr only matters when Nr > 0
+        self.m = 0.5 * np.sum(BH_bins, axis=0)
+        self.m[zmsk] = self.M[zmsk] / self.N[zmsk]
+
+        self.Mtot = self.M.sum()
+        self.Ntot = self.N.sum()
+
+    # initializations
+
+    @classmethod
+    def from_IMF(cls, m_breaks, a_slopes, nbins, FeH, N0=5e5, *,
+                 binning_method='default', natal_kicks=True, vesc=90.):
+
+        def compute_tms(mi):
+            a = tms_constants
+            return a[0] * np.exp(a[1] * mi ** a[2])
+
+        def compute_mto(t):
+            a0, a1, a2 = tms_constants
+            if t > a0:
+                return (np.log(t / a0) / a1) ** (1 / a2)
+            else:
+                return np.inf
+
+        def _derivs_BHs(t, y):
+            '''Derivatives relevant to mass changes due to stellar evolution
+            but only up to and caring about the BHs
+            y is [MS N array, BH N array, BH M array]
+            '''
+            # Setup derivative bins
+            Ns = y[:nbin_MS]  # only Ns is relevant right now
+            dNs = np.zeros(nbin_MS)
+            dNr, dMr = np.zeros(nbin_BH), np.zeros(nbin_BH)
+
+            frem = 1.0  # Retain all BHs
+
+            # Apply only if this time is atleast later than the earliest tms
+            if t > tms_u[-1]:
+
+                # Find out which mass bin is the current turn-off bin
+                isev = np.where(t > tms_u)[0][0]
+
+                mto, m1 = compute_mto(t), massbins.bins.MS.lower[isev]
+
+                # Avoid "hitting" the bin edge
+                if mto > m1 and (Nj := Ns[isev]) > 0.1:
+
+                    # The normalization constant
+                    # TODO deal with the constant divide-by-zero warning here
+                    Aj = Nj / Pk(a_slopes[-1], 1, m1, mto)
+
+                    # Get the number of turn-off stars per unit of mass
+                    dNdm = Aj * mto ** a_slopes[-1]
+
+                else:
+                    dNdm = 0
+                    # TODO just break???
+
+                # Compute the full dN/dt = dN/dm * dm/dt
+                a = tms_constants
+                dmdt = abs((1.0 / (a[1] * a[2] * t))
+                           * (np.log(t / a[0]) / a[1]) ** (1 / a[2] - 1))
+
+                dNdt = -dNdm * dmdt
+
+                # Fill in star derivatives
+                dNs[isev] = dNdt
+
+                # Skip 0-mass remnants
+                if t <= final_age and (m_rem := _ifmr.predict(mto)) > 0:
+
+                    # Find bin based on lower bin edge (must be careful later)
+                    irem = np.flatnonzero(massbins.bins.BH.lower <= m_rem)[-1]
+
+                    # Fill in remnant derivatives
+                    dNr[irem] = -dNdt * frem
+                    dMr[irem] = -m_rem * dNdt * frem
+
+            return np.r_[dNs, dNr, dMr]
+
+        _ifmr = IFMR(FeH)
+
+        massbins = MassBins(m_breaks, a_slopes, nbins, N0, _ifmr,
+                            binning_method=binning_method)
+
+        nbin_MS, nbin_BH = massbins.nbin.MS, massbins.nbin.BH
+
+        # Load a_i coefficients derived from interpolated Dartmouth models
+        mstogrid = np.loadtxt(get_data("sevtables/msto.dat"))
+        nearest_FeH = np.argmin(np.abs(mstogrid[:, 0] - FeH))
+        tms_constants = mstogrid[nearest_FeH, 1:]
+
+        # Compute t_ms for all bin edges
+        tms_u = compute_tms(massbins.bins.MS.upper)
+
+        init_N, init_M = massbins.initial_values(packed=False)
+
+        y0 = np.r_[init_N.MS, init_N.BH, init_M.BH]
+
+        sol = ode(_derivs_BHs)
+        sol.set_integrator("dopri5", max_step=1e12, atol=1e-5, rtol=1e-5)
+        sol.set_initial_value(y0, t=0.0)
+
+        final_age = compute_tms(_ifmr.BH_mi.lower + 0.1)  # fltpnt bound errors
+
+        # Integrate the solver at each bin bound, to match EvolvedMF.
+        # The ODE solvers are suspiciously sensitive to this, and while this
+        # may not be the most sane solution, this will recreate EvolvedMF.
+        for ti in np.sort(tms_u[tms_u < final_age]):
+            sol.integrate(ti)
+
+        sol.integrate(final_age)
+
+        N_BH, M_BH = sol.y[nbin_MS:nbin_MS + nbin_BH], sol.y[nbin_MS + nbin_BH:]
+
+        return cls(M_BH, N_BH, massbins.bins.BH, age=final_age,
+                   FeH=FeH, natal_kicks=natal_kicks, vesc=vesc)
