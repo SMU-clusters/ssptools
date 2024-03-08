@@ -276,7 +276,7 @@ class MassBins:
 
             bins_BH = mbin(bins_MS.lower[BH_mask].copy(),
                            bins_MS.upper[BH_mask].copy())
-            bins_BH.upper[0] = ifmr.BH_mf.lower
+            bins_BH.lower[0] = ifmr.BH_mf.lower
 
             # Neutron Stars
 
@@ -344,12 +344,13 @@ class MassBins:
 
         A3 = (
             Pk(a[2], 1, mb[2], mb[3])
-            + (mb[1] ** (a[1] - a[0]) * Pk(a[0], 1, mb[0], mb[1]))
             + (mb[2] ** (a[2] - a[1]) * Pk(a[1], 1, mb[1], mb[2]))
-        ) ** (-1)
+            + (mb[1] ** (a[1] - a[0]) * (mb[2] ** (a[2] - a[1]))
+               * Pk(a[0], 1, mb[0], mb[1]))
+        )**(-1)
 
-        A2 = A3 * mb[2] ** (a[2] - a[1])
-        A1 = A2 * mb[1] ** (a[1] - a[0])
+        A2 = A3 * mb[2]**(a[2] - a[1])
+        A1 = A2 * mb[1]**(a[1] - a[0])
 
         A = self.N0 * np.repeat([A1, A2, A3], self._nbin_MS_each)
 

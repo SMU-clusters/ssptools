@@ -734,7 +734,7 @@ class EvolvedMF:
                 #   is not ideal
 
                 # Check if any BH have been created
-                if ti > self.compute_tms(self.IFMR.BH_mi.lower):
+                if ti > self.compute_tms(self.IFMR.BH_mi.upper):
 
                     # calculate total mass we want to eject
                     M_eject = Mr.BH.sum() * (1.0 - self.BH_ret_dyn)
@@ -1002,7 +1002,7 @@ class EvolvedMFWithBH(EvolvedMF):
                 # ----------------------------------------------------------
 
                 # Check if any BH have been created
-                if ti > self.compute_tms(self.IFMR.BH_mi.lower):
+                if ti > self.compute_tms(self.IFMR.BH_mi.upper):
 
                     fBH_target = self._fBH_target[iout]
 
