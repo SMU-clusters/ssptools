@@ -12,6 +12,11 @@ rem_classes = namedtuple('rem_classes', ('WD', 'NS', 'BH'))
 star_classes = namedtuple('star_classes', ('MS',) + rem_classes._fields)
 
 
+# --------------------------------------------------------------------------
+# Helper functions
+# --------------------------------------------------------------------------
+
+
 @np.errstate(invalid='ignore')
 def Pk(a, k, m1, m2):
     r'''Convenience function for computing quantities related to IMF
@@ -55,6 +60,87 @@ def _divide_bin_sizes(N, Nsec):
     '''Split N into Nsec as equally as possible'''
     Neach, ext = divmod(N, Nsec)
     return ext * [Neach + 1] + (Nsec - ext) * [Neach]
+
+
+# --------------------------------------------------------------------------
+# Initial Mass Functions
+# --------------------------------------------------------------------------
+
+
+class PowerLawIMF:
+    '''Repr of a power law IMF
+    '''
+
+    @property
+    def mmean(self):
+        '''Mean individual stellar mass of this IMF over the given bounds'''
+        from scipy.integrate import quad
+        return quad(self.M, self.mb[0], self.mb[-1])[0]
+
+    @property
+    def Mtot(self, N):
+        '''Returns total mass of system with N total stars'''
+        from scipy.integrate import quad
+        return quad(self.M, self.mb[0], self.mb[-1], args=(N,))
+
+    def __init__(self, m_break, a):
+
+        self.mb = m_break
+        self.a = a
+
+        self._A3 = (
+            Pk(a[2], 1, self.mb[2], self.mb[3])
+            + (self.mb[2] ** (a[2] - a[1])
+               * Pk(a[1], 1, self.mb[1], self.mb[2]))
+            + (self.mb[1] ** (a[1] - a[0]) * (self.mb[2] ** (a[2] - a[1]))
+               * Pk(a[0], 1, self.mb[0], self.mb[1]))
+        )**(-1)
+
+        self._A2 = self._A3 * self.mb[2]**(a[2] - a[1])
+        self._A1 = self._A2 * self.mb[1]**(a[1] - a[0])
+
+    def __call__(self, mass, N=1):
+        '''Return the number of stars at a given mass for this IMF
+        '''
+
+        # TODO will eval all above mb[-1] as False, but below mb[0] as True
+        #       also this (problematically) fails silently (1)
+        bounds = [mass <= up_bnd for up_bnd in self.mb[1:]]
+        vals = [
+            self._A1 * mass**self.a[0],
+            self._A2 * mass**self.a[1],
+            self._A3 * mass**self.a[2]
+        ]
+
+        return N * np.select(bounds, vals)
+
+    def N(self, m, N=1):
+        return self(m, N=N)
+
+    def M(self, m, N=1):
+        return m * self(m, N=N)
+
+    def binned_eval(self, bins, N):
+        '''return binned N, M, alpha'''
+
+        bin_masks = [bins.upper <= up_bnd for up_bnd in self.mb[1:]]
+
+        A = N * np.select(bin_masks, [self._A1, self._A2, self._A3])
+
+        alpha = np.select(bin_masks, self.a)
+
+        return A * Pk(alpha, 1, *bins), A * Pk(alpha, 2, *bins), alpha
+
+    def binned_N(self, bins, N=1):
+        return self.binned_eval(bins=bins, N=N)[1]
+
+    def binned_M(self, bins, N=1):
+        return self.binned_eval(bins=bins, N=N)[2]
+
+
+# --------------------------------------------------------------------------
+# Mass Bins
+# --------------------------------------------------------------------------
 
 
 class MassBins:
