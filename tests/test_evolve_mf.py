@@ -9,9 +9,15 @@ from ssptools import evolve_mf, masses, ifmr
 
 
 # Mixture of `ssptools` and `GCfit` defaults for `evolve_mf`
+
+DEFAULT_M_BREAK = [0.1, 0.5, 1.0, 100]
+
+DEFAULT_IMF = masses.PowerLawIMF(
+    m_break=DEFAULT_M_BREAK, a=[-0.5, -1.3, -2.5], N0=5e5
+)
+
 DEFAULT_KWARGS = dict(
-    m_breaks=[0.1, 0.5, 1.0, 100], a_slopes=[-0.5, -1.3, -2.5],
-    nbins=[5, 5, 20], FeH=-1.00, tout=[12_000], Ndot=0.,
+    IMF=DEFAULT_IMF, nbins=[5, 5, 20], FeH=-1.00, tout=[12_000], Ndot=0.,
     N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
     natal_kicks=False, vesc=90
 )
@@ -292,9 +298,10 @@ class TestDerivatives:
 
     emf_kw = DEFAULT_KWARGS.copy() | {'tout': [0.], 'nbins': [1, 1, 2]}
 
-    mb = masses.MassBins(emf_kw['m_breaks'], emf_kw['a_slopes'],
-                         emf_kw['nbins'], emf_kw['N0'],
-                         ifmr.IFMR(emf_kw['FeH']))
+    imf = DEFAULT_IMF
+
+    mb = masses.MassBins(DEFAULT_M_BREAK, emf_kw['nbins'],
+                         imf, ifmr.IFMR(emf_kw['FeH']))
 
     # ----------------------------------------------------------------------
     # Derivative routines

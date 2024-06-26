@@ -6,10 +6,19 @@ import numpy as np
 from ssptools import masses, ifmr
 
 
-DEFAULT_KWARGS = dict(
-    m_break=[0.1, 0.5, 1.0, 100], a=[-0.5, -1.3, -2.5],
-    nbins=[1, 1, 2], N0=5e5, ifmr=ifmr.IFMR(-1)
+DEFAULT_M_BREAK = [0.1, 0.5, 1.0, 100]
+
+DEFAULT_IMF = masses.PowerLawIMF(
+    m_break=DEFAULT_M_BREAK, a=[-0.5, -1.3, -2.5], N0=5e5
 )
+
+DEFAULT_KWARGS = dict(
+    m_break=DEFAULT_M_BREAK, nbins=[1, 1, 2],
+    imf=DEFAULT_IMF, ifmr=ifmr.IFMR(-1)
+)
+
+
+# TODO IMF tests, `MassBins.initial_values` tests
 
 
 class TestHelperMethods:
