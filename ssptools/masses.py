@@ -454,7 +454,7 @@ class MassBins:
 
         self.bins = star_classes(MS=bins_MS, WD=bins_WD, NS=bins_NS, BH=bins_BH)
 
-    def initial_values(self, *, packed=True):
+    def initial_values(self, *, packed=True, N0=None):
         '''Return an array corresponding to `y` populated based on the IMF
 
         Based on the input IMF slopes and break masses, create an empty `y`
@@ -475,7 +475,7 @@ class MassBins:
         ndarray or 2-tuple of named `star_classes` tuples
         '''
 
-        Ns, Ms, alpha = self.imf.binned_eval(self.bins.MS)
+        Ns, Ms, alpha = self.imf.binned_eval(self.bins.MS, N=N0)
 
         # Set all initial remnant bins to zero
         Nwd, Mwd = np.zeros(self.nbin.WD), np.zeros(self.nbin.WD)
