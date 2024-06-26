@@ -79,14 +79,13 @@ class PowerLawIMF:
     @property
     def mmean(self):
         '''Mean individual stellar mass of this IMF over the given bounds'''
-        from scipy.integrate import quad
-        return quad(self.M, self.mb[0], self.mb[-1])[0]
+        return self.Mtot / self.N0
 
     @property
-    def Mtot(self, N):
+    def Mtot(self):
         '''Returns total mass of system with N total stars'''
         from scipy.integrate import quad
-        return quad(self.M, self.mb[0], self.mb[-1], args=(N,))
+        return quad(self.M, self.mb[0], self.mb[-1])[0]
 
     def __init__(self, m_break, a, N0=1, *, ext='zeros'):
 
