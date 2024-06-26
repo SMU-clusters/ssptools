@@ -69,6 +69,10 @@ def _divide_bin_sizes(N, Nsec):
 
 class PowerLawIMF:
     '''Repr of a power law IMF
+
+    if ext=0 or ‘extrapolate’, return the extrapolated value.
+    if ext=1 or ‘zeros’, return 0
+    if ext=2 or ‘raise’, raise a ValueError
     '''
 
     @property
@@ -83,7 +87,7 @@ class PowerLawIMF:
         from scipy.integrate import quad
         return quad(self.M, self.mb[0], self.mb[-1], args=(N,))
 
-    def __init__(self, m_break, a):
+    def __init__(self, m_break, a, *, ext='zeros'):
 
         self.mb = m_break
         self.a = a
@@ -99,20 +103,49 @@ class PowerLawIMF:
         self._A2 = self._A3 * self.mb[2]**(a[2] - a[1])
         self._A1 = self._A2 * self.mb[1]**(a[1] - a[0])
 
+        match ext:
+            case 0 | 'ext' | 'extrapolate':
+                self._ext = 0
+            case 1 | 'zeros':
+                self._ext = 1
+            case 2 | 'raise':
+                self._ext = 2
+            case _:
+                raise ValueError("ext must be one of ('ext', 'zeros', 'raise')")
+
     def __call__(self, mass, N=1):
         '''Return the number of stars at a given mass for this IMF
         '''
 
-        # TODO will eval all above mb[-1] as False, but below mb[0] as True
-        #       also this (problematically) fails silently (1)
-        bounds = [mass <= up_bnd for up_bnd in self.mb[1:]]
+        if self._ext == 0:
+            # Don't cut on the outermost lower and upper bounds
+            bounds = [
+                (mass <= self.mb[1]),
+                *((lw_bnd <= mass) & (mass <= up_bnd)
+                  for lw_bnd, up_bnd in zip(self.mb[1:-2], self.mb[2:-1])),
+                (self.mb[-2] <= mass)
+            ]
+
+        else:
+            bounds = [(lw_bnd <= mass) & (mass <= up_bnd)
+                      for lw_bnd, up_bnd in zip(self.mb[:-1], self.mb[1:])]
+
+        default = np.nan if self._ext == 2 else 0
+
         vals = [
             self._A1 * mass**self.a[0],
             self._A2 * mass**self.a[1],
             self._A3 * mass**self.a[2]
         ]
 
-        return N * np.select(bounds, vals)
+        out = N * np.select(bounds, vals, default=default)
+
+        if self._ext == 2 and (~np.isfinite(out)).any():
+            mssg = f"mass outside bounds ({self.mb[0]}, {self.mb[-1]})"
+            raise ValueError(mssg)
+
+        else:
+            return out
 
     def N(self, m, N=1):
         return self(m, N=N)
@@ -123,11 +156,29 @@ class PowerLawIMF:
     def binned_eval(self, bins, N):
         '''return binned N, M, alpha'''
 
-        bin_masks = [bins.upper <= up_bnd for up_bnd in self.mb[1:]]
+        if self._ext == 0:
+            # Don't cut on the outermost lower and upper bounds
+            bin_masks = [
+                (bins.upper <= self.mb[1]),
+                *((lw_bnd <= bins.lower) & (bins.upper <= up_bnd)
+                  for lw_bnd, up_bnd in zip(self.mb[1:-2], self.mb[2:-1])),
+                (self.mb[-2] <= bins.upper)
+            ]
 
-        A = N * np.select(bin_masks, [self._A1, self._A2, self._A3])
+        else:
+            bin_masks = [(lw_bnd <= bins.lower) & (bins.upper <= up_bnd)
+                         for lw_bnd, up_bnd in zip(self.mb[:-1], self.mb[1:])]
 
-        alpha = np.select(bin_masks, self.a)
+        default = np.nan if self._ext == 2 else 0
+
+        A = N * np.select(bin_masks, [self._A1, self._A2, self._A3],
+                          default=default)
+
+        if self._ext == 2 and (~np.isfinite(A)).any():
+            mssg = f"mass bins outside bounds ({self.mb[0]}, {self.mb[-1]})"
+            raise ValueError(mssg)
+
+        alpha = np.select(bin_masks, self.a, default=default)
 
         return A * Pk(alpha, 1, *bins), A * Pk(alpha, 2, *bins), alpha
 
