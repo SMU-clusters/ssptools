@@ -6,7 +6,7 @@ from scipy.integrate import ode
 from scipy.interpolate import interp1d, UnivariateSpline
 
 from .ifmr import IFMR, get_data
-from .masses import MassBins, Pk, mbin
+from .masses import PowerLawIMF, MassBins, Pk, mbin
 
 
 # TODO optionally support units for some things
@@ -241,10 +241,13 @@ class EvolvedMF:
         self.md = md
 
         # ------------------------------------------------------------------
-        # Initialise the mass bins given the power-law IMF slopes and bins
+        # Initialise the initial mass function and mass bins given the
+        # power-law IMF slopes and bins
         # ------------------------------------------------------------------
 
-        self.massbins = MassBins(m_breaks, a_slopes, nbins, N0, self.IFMR,
+        self.IMF = PowerLawIMF(m_breaks, a_slopes, N0=N0, ext='zeros')
+
+        self.massbins = MassBins(m_breaks, nbins, self.IMF, self.IFMR,
                                  binning_method=binning_method)
 
         # ------------------------------------------------------------------
@@ -1273,12 +1276,15 @@ class InitialBHPopulation:
             return np.r_[dNs, dNr, dMr]
 
         # ------------------------------------------------------------------
-        # Setup mass bins and initial values, based on the IMF
+        # Initialise the initial mass function and mass bins given the
+        # power-law IMF slopes and bins
         # ------------------------------------------------------------------
 
         _ifmr = IFMR(FeH)
 
-        massbins = MassBins(m_breaks, a_slopes, nbins, N0, _ifmr,
+        IMF = PowerLawIMF(m_breaks, a_slopes, N0=N0, ext='zeros')
+
+        massbins = MassBins(m_breaks, nbins, IMF, _ifmr,
                             binning_method=binning_method)
 
         nbin_MS, nbin_BH = massbins.nbin.MS, massbins.nbin.BH
@@ -1323,11 +1329,13 @@ class InitialBHPopulation:
         out = cls(M_BH, N_BH, massbins.bins.BH,
                   FeH=FeH, natal_kicks=natal_kicks, vesc=vesc)
 
+        out.IMF = IMF
+
         out.age = final_age
 
         Ns = sol.y[:nbin_MS]
 
-        alphas = np.repeat(massbins.a, massbins._nbin_MS_each)
+        alphas = np.repeat(a_slopes, massbins._nbin_MS_each)
         As = Ns / Pk(alphas, 1, *massbins.bins.MS)
         Ms = As * Pk(alphas, 2, *massbins.bins.MS)
 
@@ -1383,6 +1391,7 @@ class InitialBHPopulation:
 
         a, mb = a_slopes, m_breaks
 
+        # TODO switch this to use PowerLawIMF, once it supports any # of comps
         # ------------------------------------------------------------------
         # Compute the BH bin boundaries, based on the degree of the power law
         # ------------------------------------------------------------------

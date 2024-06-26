@@ -67,6 +67,7 @@ def _divide_bin_sizes(N, Nsec):
 # --------------------------------------------------------------------------
 
 
+# TODO no real need to restrict to 3-component IMF here
 class PowerLawIMF:
     '''Repr of a power law IMF
 
@@ -87,10 +88,11 @@ class PowerLawIMF:
         from scipy.integrate import quad
         return quad(self.M, self.mb[0], self.mb[-1], args=(N,))
 
-    def __init__(self, m_break, a, *, ext='zeros'):
+    def __init__(self, m_break, a, N0=1, *, ext='zeros'):
 
         self.mb = m_break
         self.a = a
+        self.N0 = N0
 
         self._A3 = (
             Pk(a[2], 1, self.mb[2], self.mb[3])
@@ -113,9 +115,11 @@ class PowerLawIMF:
             case _:
                 raise ValueError("ext must be one of ('ext', 'zeros', 'raise')")
 
-    def __call__(self, mass, N=1):
+    def __call__(self, mass, *, N=None):
         '''Return the number of stars at a given mass for this IMF
         '''
+
+        N = N if N is not None else self.N0
 
         if self._ext == 0:
             # Don't cut on the outermost lower and upper bounds
@@ -147,14 +151,16 @@ class PowerLawIMF:
         else:
             return out
 
-    def N(self, m, N=1):
+    def N(self, m, *, N=None):
         return self(m, N=N)
 
-    def M(self, m, N=1):
+    def M(self, m, *, N=None):
         return m * self(m, N=N)
 
-    def binned_eval(self, bins, N):
+    def binned_eval(self, bins, *, N=None):
         '''return binned N, M, alpha'''
+
+        N = N if N is not None else self.N0
 
         if self._ext == 0:
             # Don't cut on the outermost lower and upper bounds
@@ -182,10 +188,10 @@ class PowerLawIMF:
 
         return A * Pk(alpha, 1, *bins), A * Pk(alpha, 2, *bins), alpha
 
-    def binned_N(self, bins, N=1):
+    def binned_N(self, bins, *, N=None):
         return self.binned_eval(bins=bins, N=N)[1]
 
-    def binned_M(self, bins, N=1):
+    def binned_M(self, bins, *, N=None):
         return self.binned_eval(bins=bins, N=N)[2]
 
 
@@ -282,12 +288,12 @@ class MassBins:
 
     '''
 
-    def __init__(self, m_break, a, nbins, N0, ifmr, *,
+    def __init__(self, m_break, nbins, imf, ifmr, *,
                  binning_method='default'):
 
-        N_MS_breaks = len(m_break) - 1
+        self.imf = imf
 
-        self.a, self.m_break, self.N0 = a, m_break, N0
+        N_MS_breaks = len(m_break) - 1
 
         # ------------------------------------------------------------------
         # Unpack number of stellar bins
@@ -470,36 +476,7 @@ class MassBins:
         ndarray or 2-tuple of named `star_classes` tuples
         '''
 
-        # TODO this is where we restrict to 3comp IMF,
-        #   but should be generalized to any number of comps really
-
-        # ------------------------------------------------------------------
-        # Compute normalization factors A_j
-        # ------------------------------------------------------------------
-
-        a, mb = self.a, self.m_break
-
-        A3 = (
-            Pk(a[2], 1, mb[2], mb[3])
-            + (mb[2] ** (a[2] - a[1]) * Pk(a[1], 1, mb[1], mb[2]))
-            + (mb[1] ** (a[1] - a[0]) * (mb[2] ** (a[2] - a[1]))
-               * Pk(a[0], 1, mb[0], mb[1]))
-        )**(-1)
-
-        A2 = A3 * mb[2]**(a[2] - a[1])
-        A1 = A2 * mb[1]**(a[1] - a[0])
-
-        A = self.N0 * np.repeat([A1, A2, A3], self._nbin_MS_each)
-
-        # ------------------------------------------------------------------
-        # Set the initial Nj and mj for all bins (stars and remnants)
-        # ------------------------------------------------------------------
-
-        # Expand array of IMF slopes to all mass bins
-        alpha = np.repeat(a, self._nbin_MS_each)
-
-        # Set initial star bins based on IMF
-        Ns = A * Pk(alpha, 1, *self.bins.MS)
+        Ns, Ms, alpha = self.imf.binned_eval(self.bins.MS)
 
         # Set all initial remnant bins to zero
         Nwd, Mwd = np.zeros(self.nbin.WD), np.zeros(self.nbin.WD)
@@ -510,9 +487,6 @@ class MassBins:
             return self.pack_values(Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh)
 
         else:
-            # this way so wouldn't have to recompute Ms from typical unpacked
-            Ms = A * Pk(alpha, 2, *self.bins.MS)
-
             N = star_classes(MS=Ns, WD=Nwd, NS=Nns, BH=Nbh)
             M = star_classes(MS=Ms, WD=Mwd, NS=Mns, BH=Mbh)
 
