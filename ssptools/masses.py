@@ -66,10 +66,8 @@ def _divide_bin_sizes(N, Nsec):
 # Initial Mass Functions
 # --------------------------------------------------------------------------
 
-
-# TODO no real need to restrict to 3-component IMF here
 class PowerLawIMF:
-    '''Repr of a power law IMF
+    '''Repr of a power law IMF with N components
 
     if ext=0 or ‘extrapolate’, return the extrapolated value.
     if ext=1 or ‘zeros’, return 0
@@ -89,20 +87,38 @@ class PowerLawIMF:
 
     def __init__(self, m_break, a, N0=1, *, ext='zeros'):
 
-        self.mb = m_break
-        self.a = a
-        self.N0 = N0
+        Nc = len(a)
+        mb = m_break
 
-        self._A3 = (
-            Pk(a[2], 1, self.mb[2], self.mb[3])
-            + (self.mb[2] ** (a[2] - a[1])
-               * Pk(a[1], 1, self.mb[1], self.mb[2]))
-            + (self.mb[1] ** (a[1] - a[0]) * (self.mb[2] ** (a[2] - a[1]))
-               * Pk(a[0], 1, self.mb[0], self.mb[1]))
+        if (Nmb := len(mb)) != Nc + 1:
+            mssg = f"`m_break` must have size len(a) + 1 ({Nc + 1}), not {Nmb}"
+            raise ValueError(mssg)
+
+        if not np.all(np.diff(mb) > 0):
+            mssg = "All break masses must be in increasing order"
+            raise ValueError(mssg)
+
+        self.mb = np.asarray(mb)
+        self.a = np.asarray(a)
+        self.N0 = N0
+        self.Ncomp = Nc
+
+        self._A_comps = np.empty(Nc)
+
+        # Compute the final A_N normalization component (ouf)
+        self._A_comps[Nc - 1] = (
+            np.sum([
+                Pk(a[i], 1, mb[i], mb[i + 1]) * np.prod([
+                    mb[j]**(a[j] - a[j - 1])
+                    for j in range(i + 1, Nc)
+                ])
+                for i in range(0, Nc)
+            ])
         )**(-1)
 
-        self._A2 = self._A3 * self.mb[2]**(a[2] - a[1])
-        self._A1 = self._A2 * self.mb[1]**(a[1] - a[0])
+        # Compute all the following A_i normalization components
+        for i in range(self.Ncomp - 1, 0, -1):
+            self._A_comps[i - 1] = self._A_comps[i] * mb[i]**(a[i] - a[i - 1])
 
         match ext:
             case 0 | 'ext' | 'extrapolate':
@@ -117,6 +133,8 @@ class PowerLawIMF:
     def __call__(self, mass, *, N=None):
         '''Return the number of stars at a given mass for this IMF
         '''
+
+        mass = np.float64(mass)  # mostly to avoid warnings from scipy.integrate
 
         N = N if N is not None else self.N0
 
@@ -135,11 +153,7 @@ class PowerLawIMF:
 
         default = np.nan if self._ext == 2 else 0
 
-        vals = [
-            self._A1 * mass**self.a[0],
-            self._A2 * mass**self.a[1],
-            self._A3 * mass**self.a[2]
-        ]
+        vals = (self._A_comps * mass[..., np.newaxis]**self.a).T
 
         out = N * np.select(bounds, vals, default=default)
 
@@ -161,6 +175,8 @@ class PowerLawIMF:
 
         N = N if N is not None else self.N0
 
+        # TODO broken when a bin falls on either side of a break mass... ouf
+
         if self._ext == 0:
             # Don't cut on the outermost lower and upper bounds
             bin_masks = [
@@ -176,8 +192,7 @@ class PowerLawIMF:
 
         default = np.nan if self._ext == 2 else 0
 
-        A = N * np.select(bin_masks, [self._A1, self._A2, self._A3],
-                          default=default)
+        A = N * np.select(bin_masks, self._A_comps, default=default)
 
         if self._ext == 2 and (~np.isfinite(A)).any():
             mssg = f"mass bins outside bounds ({self.mb[0]}, {self.mb[-1]})"
