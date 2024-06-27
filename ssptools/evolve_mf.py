@@ -1532,7 +1532,7 @@ class InitialBHPopulation:
 
     @classmethod
     def from_BHMF(cls, m_breaks, a_slopes, nbins, FeH, N0=1000, *,
-                  natal_kicks=True, vesc=90.):
+                  natal_kicks=True, vesc=90., binning_method='default'):
         '''Initialize a BH population based on a given power-law mass function.
 
         Based on an explicit given power-law parametrization of a BH mass
@@ -1545,11 +1545,10 @@ class InitialBHPopulation:
         Parameters
         ----------
         m_breaks : list of float
-            IMF break-masses (including outer bounds; size 2 or 3).
+            IMF break-masses (including outer bounds; size N+1).
 
         a_slopes : list of float
-            IMF slopes α. Supports either a single or broken (i.e. double)
-            power law (size 1 or 2).
+            IMF slopes α. Supports any number of power law components (size N).
 
         nbins : int or list of int
             Number of mass bins in each regime of the given MF, as defined by
@@ -1574,58 +1573,12 @@ class InitialBHPopulation:
             See `masses.MassBins` for more information.
         '''
 
-        a, mb = a_slopes, m_breaks
+        MF = PowerLawIMF(m_breaks, a_slopes, N0=N0)
 
-        # TODO switch this to use PowerLawIMF, once it supports any # of comps
-        # ------------------------------------------------------------------
-        # Compute the BH bin boundaries, based on the degree of the power law
-        # ------------------------------------------------------------------
+        bins = MassBins(m_breaks, nbins, imf=MF, ifmr=IFMR(FeH),
+                        binning_method=binning_method).bins.MS
 
-        if len(a) == 2:
-
-            if isinstance(nbins, int):
-                from .masses import _divide_bin_sizes
-                nbins = _divide_bin_sizes(nbins, 2)
-
-            A2 = (
-                Pk(a[1], 1, mb[1], mb[2])
-                + (mb[1] ** (a[1] - a[0]) * Pk(a[0], 1, mb[0], mb[1]))
-            )**(-1)
-
-            A1 = A2 * mb[1]**(a[1] - a[0])
-
-            A = N0 * np.repeat([A1, A2], nbins)
-
-            bin_sides = np.r_[
-                np.geomspace(mb[0], mb[1], nbins[0] + 1),
-                np.geomspace(mb[1], mb[2], nbins[1] + 1)[1:]
-            ]
-
-        elif len(a) == 1:
-
-            A1 = Pk(a[0], 1, mb[0], mb[1])**(-1)
-
-            A = N0 * np.repeat([A1], nbins)
-
-            bin_sides = np.geomspace(mb[0], mb[1], nbins + 1)
-
-        else:
-            # TODO there's no real reason to restrict this honestly
-            mssg = "`from_BHMF` only supports one or two component power laws"
-            raise ValueError(mssg)
-
-        bins = mbin(bin_sides[:-1], bin_sides[1:])
-
-        # ------------------------------------------------------------------
-        # Compute the number and mass of BHs in each bin
-        # ------------------------------------------------------------------
-
-        # Expand array of IMF slopes to all mass bins
-        alpha = np.repeat(a, nbins)
-
-        # Set initial star bins based on IMF
-        N_BH = A * Pk(alpha, 1, *bins)
-        M_BH = A * Pk(alpha, 2, *bins)
+        N_BH, M_BH, _ = MF.binned_eval(bins)
 
         return cls(M_BH, N_BH, bins, FeH=FeH,
                    natal_kicks=natal_kicks, vesc=vesc)
