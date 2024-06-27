@@ -1,6 +1,6 @@
 [project]
 name = "astro-ssptools"
-version = "1.0.0"
+version = "1.1.0"
 description = "Simple Stellar Population Tools"
 authors = [
     {name = "Eduardo Balbinot", email = "eduardo.balbinot@gmail.com"},
@@ -10,7 +10,7 @@ authors = [
     {name = "Miklos Peuten", email = "m.peuten@surrey.ac.uk"},
 ]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 keywords = ["ssptools"]
 license = {file = "LICENSE"}
 dependencies = [

@@ -6,7 +6,7 @@ from scipy.integrate import ode
 from scipy.interpolate import interp1d, UnivariateSpline
 
 from .ifmr import IFMR, get_data
-from .masses import PowerLawIMF, MassBins, Pk, mbin
+from .masses import PowerLawIMF, MassBins, Pk
 
 
 # TODO optionally support units for some things
@@ -1213,7 +1213,7 @@ class InitialBHPopulation:
     Mtot, Ntot : float
         The total mass and amount of BHs in the entire population.
 
-    bins : mbin
+    bins : masses.mbin
         The BH mass bin edges.
 
     age : float
