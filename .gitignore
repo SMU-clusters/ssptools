@@ -101,9 +101,6 @@ ENV/
 # mypy
 .mypy_cache/
 
-# Images
-*.png
-
 #Vscode
 /.vscode
 /ssptools/.vscode/
