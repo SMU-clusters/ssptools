@@ -36,7 +36,7 @@ An evolved mass function can be computed using the `EvolvedMF` class:
 ```python
 import ssptools
 
-m_break, a_slopes, nbins = [0.08, 0.5, 150.], [-1.3, -2.3], [5, 30]
+m_break, a_slopes, nbins = [0.08, 0.5, 150.], [+1.3, -2.3], [5, 30]
 pdmf = ssptools.EvolvedMF.from_powerlaw(m_break, a_slopes, nbins,
                                         FeH=-1.5, tout=13000, Ndot=0, N0=1e6)
 ```
