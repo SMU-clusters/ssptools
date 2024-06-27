@@ -67,21 +67,46 @@ def _divide_bin_sizes(N, Nsec):
 # --------------------------------------------------------------------------
 
 class PowerLawIMF:
-    '''Repr of a power law IMF with N components
+    '''Representation of a N-component power law Initial Mass Function (IMF).
 
-    if ext=0 or ‘extrapolate’, return the extrapolated value.
-    if ext=1 or ‘zeros’, return 0
-    if ext=2 or ‘raise’, raise a ValueError
+    Based on a set of power law exponent slopes and break masses, constructs a
+    stellar initial mass function (IMF) with useful methods for computing the
+    expected total number or mass of stars of a given individual mass, both
+    for continuous mass distribution and sets of mass bins.
+
+    Parameters
+    ----------
+    m_break : list of N+1 float
+        IMF break-masses (including outer bounds) defining the mass ranges
+        covered by each component of this IMF.
+
+    a : list of N float
+        IMF power law slopes defining the exponent (e.g. :math:`m^{a_i}`) of
+        each component of this IMF.
+
+    N0 : int, optional
+        Total initial number of stars, over all bins. Used to determine the
+        normalization factor. This value acts as the default when `N` is not
+        passed to various methods.
+
+    ext : int or str, optional
+        Controls the behaviour of the IMF outside of the mass interval (defined
+        by the edges of `m_break`).
+
+        * if ext=0 or ‘extrapolate’, extrapolate the nearest component.
+        * if ext=1 or ‘zeros’, return 0 (default).
+        * if ext=2 or ‘raise’, raise a ValueError.
+
     '''
 
     @property
     def mmean(self):
-        '''Mean individual stellar mass of this IMF over the given bounds'''
+        '''The overall mean individual stellar mass of this IMF'''
         return self.Mtot / self.N0
 
     @property
     def Mtot(self):
-        '''Returns total mass of system with N total stars'''
+        '''Total mass of system under this IMF (assuming `self.N0` stars).'''
         from scipy.integrate import quad
         return quad(self.M, self.mb[0], self.mb[-1])[0]
 
@@ -105,7 +130,8 @@ class PowerLawIMF:
 
         self._A_comps = np.empty(Nc)
 
-        # Compute the final A_N normalization component (ouf)
+        # Compute the final A_N normalization component
+        # A_N^{-1} = \sum_{i=1}^{N} P(a_i) \prod_{j=i+1}^{N} m_{j}^{a_j-a_{j-1}}
         self._A_comps[Nc - 1] = (
             np.sum([
                 Pk(a[i], 1, mb[i], mb[i + 1]) * np.prod([
@@ -131,8 +157,7 @@ class PowerLawIMF:
                 raise ValueError("ext must be one of ('ext', 'zeros', 'raise')")
 
     def __call__(self, mass, *, N=None):
-        '''Return the number of stars at a given mass for this IMF
-        '''
+        '''Return the number of stars at a given mass for this IMF, N(m)'''
 
         mass = np.float64(mass)  # mostly to avoid warnings from scipy.integrate
 
@@ -165,13 +190,46 @@ class PowerLawIMF:
             return out
 
     def N(self, m, *, N=None):
+        '''Return the number of stars at a given mass for this IMF, N(m)'''
         return self(m, N=N)
 
     def M(self, m, *, N=None):
+        '''Return the total mass of stars at a given mass for this IMF, M(m)'''
         return m * self(m, N=N)
 
     def binned_eval(self, bins, *, N=None):
-        '''return binned N, M, alpha'''
+        '''Evaluate this imf within a given set of mass bins.
+
+        Computes the mass and numbers of stars dictated by this IMF within a
+        set of given mass bins (i.e. bin edges) by evaluating the form of the
+        IMF applicable to the area covered by each bin.
+
+        The mean mass in each bin can then be computed as :math:`m=M/N`.
+
+        Parameters
+        ----------
+        bins : mbin
+            The mass bins (defining the upper and lower bounds of each bin) to
+            evaluate the IMF over. These do not necessarily need to align with
+            any IMF break masses.
+
+        N : int, optional
+            Total initial number of stars, over all bins. Used to determine the
+            normalization factor. By default, uses the `N0` parameter set during
+            creation of the class.
+
+        Returns
+        -------
+        binned_N : np.ndarray[Nbins]
+            The total number of stars in each bin. Normalized such that
+            `binned_N.sum() = N`.
+
+        binned_M : np.ndarray[Nbins]
+            The total mass of stars in each bin.
+
+        binned_alpha : np.ndarray[Nbins]
+            The power law exponent corresponding to each mass bin.
+        '''
 
         N = N if N is not None else self.N0
 
@@ -203,10 +261,12 @@ class PowerLawIMF:
         return A * Pk(alpha, 1, *bins), A * Pk(alpha, 2, *bins), alpha
 
     def binned_N(self, bins, *, N=None):
-        return self.binned_eval(bins=bins, N=N)[1]
+        '''Return the total number of stars within given mass bins.'''
+        return self.binned_eval(bins=bins, N=N)[0]
 
     def binned_M(self, bins, *, N=None):
-        return self.binned_eval(bins=bins, N=N)[2]
+        '''Return the total mass of stars within given mass bins.'''
+        return self.binned_eval(bins=bins, N=N)[1]
 
 
 # --------------------------------------------------------------------------
@@ -220,7 +280,7 @@ class MassBins:
     A class handling the construction, holding and handling of mass bins.
     Both stars and remnants mass bins are handled separately.
 
-    Based on input parameters defining the binned mass function (break masses,
+    Based on input parameters defining the binning scheme (break masses,
     number of bins, etc.) sets up the spacing and boundaries of mass bins.
     Mass bins are defined using the `mbin` named tuple, with upper and lower
     bounds for each bin.
@@ -252,18 +312,13 @@ class MassBins:
     Methods are available here to pack these distinct arrays into a single `y`
     or unpack a single `y` into the separate arrays.
 
-    Note: currently this class only supports an IMF of a 3-component power
-    law.
-
     Parameters
     ----------
-    m_break : list of float
-        IMF break-masses (including outer bounds; size 4)
+    m_break : list of N+1 float
+        Mass bin break-masses (including outer bounds) used to define (if N>1)
+        portions of the mass interval to be divided separately.
 
-    a : list of float
-        IMF power law slopes (size 3)
-
-    nbins : int or list of int (size 3) or dict
+    nbins : int or list of N int or dict
         Number of stellar mass bins in each regime. If a single integer, the
         number mass bins between each break mass will be equal, otherwise
         the number of bins between each can be specified directly.
@@ -272,8 +327,10 @@ class MassBins:
         Also allowed is a dict of {'MS', 'WD', 'NS', 'BH'}, each containing
         a number of bins, where the remnant bins can be specified directly.
 
-    N0 : int
-        Total initial number of stars
+    imf : PowerLawIMF
+        Initial mass function class, required for determining the initial
+        star amounts in the `initial_values` method. Any break masses used in
+        the IMF construction are *not* used to setup mass bins.
 
     ifmr : ifmr.IFMR
         Initial-final mass relation class, required to set remnant mass
@@ -472,10 +529,9 @@ class MassBins:
     def initial_values(self, *, packed=True, N0=None):
         '''Return an array corresponding to `y` populated based on the IMF
 
-        Based on the input IMF slopes and break masses, create an empty `y`
-        array and populate it with "initial" values.
-        These values will populate the number of stars and the alpha slopes,
-        and all remnants will be left as 0.
+        Based on the input IMF , create an empty `y` array and populate it
+        with "initial" values. These values will populate the number of stars
+        and the alpha slopes, and all remnants will be left as 0.
 
         Parameters
         ----------
