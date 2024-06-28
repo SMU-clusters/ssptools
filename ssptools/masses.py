@@ -97,6 +97,7 @@ class PowerLawIMF:
         * if ext=1 or ‘zeros’, return 0 (default).
         * if ext=2 or ‘raise’, raise a ValueError.
 
+        If ext=0, the IMF will still be normalized to N0 within the mass bounds.
     '''
 
     @property
@@ -117,6 +118,9 @@ class PowerLawIMF:
 
         if (Nmb := len(mb)) != Nc + 1:
             mssg = f"`m_break` must have size len(a) + 1 ({Nc + 1}), not {Nmb}"
+            raise ValueError(mssg)
+        elif Nmb < 2:
+            mssg = "`m_break` must be at least size 2 (upper and lower bounds)"
             raise ValueError(mssg)
 
         if not np.all(np.diff(mb) > 0):
@@ -164,13 +168,18 @@ class PowerLawIMF:
         N = N if N is not None else self.N0
 
         if self._ext == 0:
-            # Don't cut on the outermost lower and upper bounds
-            bounds = [
-                (mass <= self.mb[1]),
-                *((lw_bnd <= mass) & (mass <= up_bnd)
-                  for lw_bnd, up_bnd in zip(self.mb[1:-2], self.mb[2:-1])),
-                (self.mb[-2] <= mass)
-            ]
+
+            if self.Ncomp == 1:
+                bounds = [True, ] * self._A_comps.size
+
+            else:
+                # Don't cut on the outermost lower and upper bounds
+                bounds = [
+                    (mass <= self.mb[1]),
+                    *((lw_bnd <= mass) & (mass <= up_bnd)
+                      for lw_bnd, up_bnd in zip(self.mb[1:-2], self.mb[2:-1])),
+                    (self.mb[-2] <= mass)
+                ]
 
         else:
             bounds = [(lw_bnd <= mass) & (mass <= up_bnd)
@@ -236,13 +245,19 @@ class PowerLawIMF:
         # TODO broken when a bin falls on either side of a break mass... ouf
 
         if self._ext == 0:
-            # Don't cut on the outermost lower and upper bounds
-            bin_masks = [
-                (bins.upper <= self.mb[1]),
-                *((lw_bnd <= bins.lower) & (bins.upper <= up_bnd)
-                  for lw_bnd, up_bnd in zip(self.mb[1:-2], self.mb[2:-1])),
-                (self.mb[-2] <= bins.upper)
-            ]
+
+            if self.Ncomp == 1:
+                bin_masks = [True, ] * self._A_comps.size
+
+            else:
+
+                # Don't cut on the outermost lower and upper bounds
+                bin_masks = [
+                    (bins.upper <= self.mb[1]),
+                    *((lw_bnd <= bins.lower) & (bins.upper <= up_bnd)
+                      for lw_bnd, up_bnd in zip(self.mb[1:-2], self.mb[2:-1])),
+                    (self.mb[-2] <= bins.upper)
+                ]
 
         else:
             bin_masks = [(lw_bnd <= bins.lower) & (bins.upper <= up_bnd)
