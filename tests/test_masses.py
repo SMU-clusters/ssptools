@@ -232,12 +232,6 @@ class TestMassIndices:
 
 class TestIMFInit:
 
-    imf = masses.PowerLawIMF(
-        m_break=DEFAULT_M_BREAK, a=[-0.5, -1.3, -2.5], N0=1000
-    )
-
-    mb = masses.MassBins(**DEFAULT_KWARGS)
-
     # ----------------------------------------------------------------------
     # Test computation of normalization factors A, for different N comps
     # ----------------------------------------------------------------------
@@ -280,6 +274,20 @@ class TestIMFInit:
 
         with expected:
             masses.PowerLawIMF(m_break=mb, a=a, N0=1000)
+
+    # ----------------------------------------------------------------------
+    # Test init to match a given total mass
+    # ----------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        "mb, a", [([1, 100], [-1.5]), ([1, 50, 100], [-1.5, -1.5])]
+    )
+    @pytest.mark.parametrize('M0', (1, 5e5, 1e6))
+    def test_init_from_M0(self, mb, a, M0):
+
+        imf = masses.PowerLawIMF.from_M0(m_break=mb, a=a, M0=M0)
+
+        assert imf.N0 * imf.mmean == pytest.approx(M0)
 
 
 class TestIMFEval:

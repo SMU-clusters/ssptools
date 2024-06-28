@@ -111,6 +111,17 @@ class PowerLawIMF:
         from scipy.integrate import quad
         return quad(self.M, self.mb[0], self.mb[-1])[0]
 
+    @classmethod
+    def from_M0(cls, m_break, a, M0, *, ext='zeros'):
+        '''Initialize an IMF with the N0 required to have a total mass of M0.'''
+
+        imf = cls(m_break=m_break, a=a, N0=1, ext='zeros')
+
+        N0 = M0 / imf.mmean
+        imf.N0 = N0
+
+        return imf
+
     def __init__(self, m_break, a, N0=1, *, ext='zeros'):
 
         Nc = len(a)
