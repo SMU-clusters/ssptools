@@ -233,7 +233,7 @@ class EvolvedMF:
 
     def __init__(self, IMF, nbins, FeH, tout, esc_rate, N0=5e5,
                  tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
-                 natal_kicks=False, vesc=90, md=1.2,
+                 natal_kicks=False, vesc=90, stellar_evolution=True,
                  md=1.2, esc_norm='N',
                  binning_breaks=None, binning_method='default'):
 
@@ -254,6 +254,8 @@ class EvolvedMF:
         if esc_norm not in ('N', 'M'):
             mssg = f"Invalid 'esc_norm' {esc_norm}, must be one of 'M', 'N'."
             raise ValueError(mssg)
+
+        self._stellar_ev = stellar_evolution
 
         self.NS_ret = NS_ret
         self.BH_ret_int = BH_ret_int
@@ -430,7 +432,10 @@ class EvolvedMF:
         self.nstep += 1
 
         # Compute stellar evolution derivatives
-        derivs_sev = self._derivs_sev(t, y)
+        if self._stellar_ev:
+            derivs_sev = self._derivs_sev(t, y)
+        else:
+            derivs_sev = self.massbins.blanks(packed=True)
 
         # Only run the dynamical star losses `derivs_esc` if escape is not zero
         if self.esc_rate < 0:
@@ -891,6 +896,11 @@ class EvolvedMF:
                     mr[rem_mask] = Mr[c][rem_mask] / Nr[c][rem_mask]
 
                     self.mr[c][iout, :] = mr
+
+        self.converged = sol.successful()
+        if not self.converged:
+            mssg = "ODE solver has *not* converged, this MF will not be valid."
+            warnings.warn(mssg)
 
 
 class EvolvedMFWithBH(EvolvedMF):
