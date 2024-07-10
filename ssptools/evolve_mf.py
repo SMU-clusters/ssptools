@@ -897,6 +897,10 @@ class EvolvedMF:
 
                     self.mr[c][iout, :] = mr
 
+        Mtot = self.Ms.sum(axis=1) + np.c_[self.Mr].sum(axis=1)
+        Ntot = self.Ns.sum(axis=1) + np.c_[self.Nr].sum(axis=1)
+        self.mmean = Mtot / Ntot
+
         self.converged = sol.successful()
         if not self.converged:
             mssg = "ODE solver has *not* converged, this MF will not be valid."
@@ -1250,6 +1254,15 @@ class EvolvedMFWithBH(EvolvedMF):
                     mr[rem_mask] = Mr[c][rem_mask] / Nr[c][rem_mask]
 
                     self.mr[c][iout, :] = mr
+
+        Mtot = self.Ms.sum(axis=1) + np.c_[self.Mr].sum(axis=1)
+        Ntot = self.Ns.sum(axis=1) + np.c_[self.Nr].sum(axis=1)
+        self.mmean = Mtot / Ntot
+
+        self.converged = sol.successful()
+        if not self.converged:
+            mssg = "ODE solver has *not* converged, this MF will not be valid."
+            warnings.warn(mssg)
 
 
 class InitialBHPopulation:
