@@ -46,12 +46,15 @@ class EvolvedMF:
         Times, in years, at which to output PDMF. Defines the shape of many
         outputted attributes.
 
-    esc_rate : float
+    esc_rate : float or callable
         Represents rate of change of stars over time due to tidal
         ejections (and other escape mechanisms). Regulates low-mass object
         depletion (ejection) due to dynamical evolution.
-        Must be in units of stars per Myr if `esc_norm` is 'N' or solar masses
-        per Myr if `esc_norm` is 'M'.
+        If a float, will apply a constant escape rate across all time. If a
+        callable, must take in a time `t` in Myr and output a (negative) float
+        representing the rate at that time.
+        Rates must be in units of stars per Myr if `esc_norm` is 'N' or solar
+        masses per Myr if `esc_norm` is 'M'.
 
     N0 : int or None, optional
         Total initial number of stars, over all bins.
@@ -245,10 +248,11 @@ class EvolvedMF:
         self.tcc = tcc
         self.tout = np.atleast_1d(tout)
 
-        self._esc_norm = esc_norm
         self.esc_rate = esc_rate
+        self._esc_norm = esc_norm
+        self._time_dep_esc = callable(esc_rate)
 
-        if esc_rate > 0:
+        if not self._time_dep_esc and esc_rate > 0:
             raise ValueError("'esc_rate' must be less than 0")
 
         if esc_norm not in ('N', 'M'):
@@ -365,12 +369,15 @@ class EvolvedMF:
             Times, in years, at which to output PDMF. Defines the shape of many
             outputted attributes.
 
-        esc_rate : float
+        esc_rate : float or callable
             Represents rate of change of stars over time due to tidal
             ejections (and other escape mechanisms). Regulates low-mass object
             depletion (ejection) due to dynamical evolution.
-            Must be in units of stars per Myr if `esc_norm` is 'N' or solar
-            masses per Myr if `esc_norm` is 'M'.
+            If a float, will apply a constant escape rate across all time. If a
+            callable, must take in a time `t` in Myr and output a (negative)
+            float representing the rate at that time.
+            Rates must be in units of stars per Myr if `esc_norm` is 'N' or
+            solar masses per Myr if `esc_norm` is 'M'.
 
         N0 : int or None, optional
             Total initial number of stars, over all bins.
@@ -438,7 +445,7 @@ class EvolvedMF:
             derivs_sev = self.massbins.blanks(packed=True)
 
         # Only run the dynamical star losses `derivs_esc` if escape is not zero
-        if self.esc_rate < 0:
+        if self._time_dep_esc or self.esc_rate < 0:
             derivs_esc = self._derivs_esc(t, y)
         else:
             derivs_esc = np.zeros_like(derivs_sev)
@@ -536,7 +543,7 @@ class EvolvedMF:
 
         # Determine total loss rate (normalization)
 
-        esc_rate = self.esc_rate
+        esc_rate = self.esc_rate(t) if self._time_dep_esc else self.esc_rate
 
         # If not core collapsed, use different, simpler, algorithm
 
@@ -939,12 +946,15 @@ class EvolvedMFWithBH(EvolvedMF):
         Times, in years, at which to output PDMF. Defines the shape of many
         outputted attributes.
 
-    esc_rate : float
+    esc_rate : float or callable
         Represents rate of change of stars over time due to tidal
         ejections (and other escape mechanisms). Regulates low-mass object
         depletion (ejection) due to dynamical evolution.
-        Must be in units of stars per Myr if `esc_norm` is 'N' or solar masses
-        per Myr if `esc_norm` is 'M'.
+        If a float, will apply a constant escape rate across all time. If a
+        callable, must take in a time `t` in Myr and output a (negative) float
+        representing the rate at that time.
+        Rates must be in units of stars per Myr if `esc_norm` is 'N' or solar
+        masses per Myr if `esc_norm` is 'M'.
 
     f_BH : float
         The desired final BH mass fraction (0 to 1).
@@ -1015,12 +1025,15 @@ class EvolvedMFWithBH(EvolvedMF):
             Times, in years, at which to output PDMF. Defines the shape of many
             outputted attributes.
 
-        esc_rate : float
+        esc_rate : float or callable
             Represents rate of change of stars over time due to tidal
             ejections (and other escape mechanisms). Regulates low-mass object
             depletion (ejection) due to dynamical evolution.
-            Must be in units of stars per Myr if `esc_norm` is 'N' or solar
-            masses per Myr if `esc_norm` is 'M'.
+            If a float, will apply a constant escape rate across all time. If a
+            callable, must take in a time `t` in Myr and output a (negative)
+            float representing the rate at that time.
+            Rates must be in units of stars per Myr if `esc_norm` is 'N' or
+            solar masses per Myr if `esc_norm` is 'M'.
 
         f_BH : float
             The desired final BH mass fraction (0 to 1).
