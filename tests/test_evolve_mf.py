@@ -17,7 +17,7 @@ DEFAULT_IMF = masses.PowerLawIMF(
 )
 
 DEFAULT_KWARGS = dict(
-    IMF=DEFAULT_IMF, nbins=[5, 5, 20], FeH=-1.00, tout=[12_000], Ndot=0.,
+    IMF=DEFAULT_IMF, nbins=[5, 5, 20], FeH=-1.00, tout=[12_000], esc_rate=0.,
     N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
     natal_kicks=False, vesc=90
 )
@@ -355,9 +355,66 @@ class TestDerivatives:
                               0.00000000e+00, 0.00000000e+00])),
         ],
     )
-    def test_esc(self, y, t, expected):
+    def test_esc_N(self, y, t, expected):
 
-        kw = self.emf_kw | {'Ndot': -10}
+        kw = self.emf_kw | {'esc_rate': -10, 'esc_norm': 'N'}
+        emf = evolve_mf.EvolvedMF(**kw)
+
+        ydot = emf._derivs_esc(t, y)
+        assert ydot == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        't, expected',
+        [
+            (100, np.array([-4.19199569e+00, -1.76318142e+00, 0.00000000e+00,
+                            0.00000000e+00, 1.97026640e-03, 3.42799895e-03,
+                            0.00000000e+00, 0.00000000e+00, -1.57520504e+00,
+                            -1.57520504e+00, -1.57520504e+00, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00, -7.87602518e-01,
+                            -7.87602518e-01, -7.87602518e-01, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00])),
+            (12000, np.array([-4.03002189e+00, -2.18608060e+00, 0.00000000e+00,
+                              0.00000000e+00, 1.89413762e-03, 3.11881871e-03,
+                              0.00000000e+00, 0.00000000e+00, -1.51434096e+00,
+                              -1.51434096e+00, -1.51434096e+00, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00, -7.57170479e-01,
+                              -7.57170479e-01, -7.57170479e-01, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00])),
+        ],
+    )
+    def test_esc_M(self, y, t, expected):
+
+        kw = self.emf_kw | {'esc_rate': -5, 'esc_norm': 'M'}
+        emf = evolve_mf.EvolvedMF(**kw)
+
+        ydot = emf._derivs_esc(t, y)
+        assert ydot == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        't, expected',
+        [
+            (100, np.array([-8.38399139e+00, -3.52636283e+00, 0.00000000e+00,
+                            0.00000000e+00, 3.94053281e-03, 6.85599789e-03,
+                            0.00000000e+00, 0.00000000e+00, -3.15041007e+00,
+                            -3.15041007e+00, -3.15041007e+00, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00, -1.57520504e+00,
+                            -1.57520504e+00, -1.57520504e+00, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00])),
+            (12000, np.array([-4.03002189e+00, -2.18608060e+00, 0.00000000e+00,
+                              0.00000000e+00, 1.89413762e-03, 3.11881871e-03,
+                              0.00000000e+00, 0.00000000e+00, -1.51434096e+00,
+                              -1.51434096e+00, -1.51434096e+00, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00, -7.57170479e-01,
+                              -7.57170479e-01, -7.57170479e-01, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00])),
+        ],
+    )
+    def test_esc_M_t(self, y, t, expected):
+
+        def M_t(t):
+            return -10 if t < 500 else -5
+
+        kw = self.emf_kw | {'esc_rate': M_t, 'esc_norm': 'M'}
         emf = evolve_mf.EvolvedMF(**kw)
 
         ydot = emf._derivs_esc(t, y)
