@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import warnings
+
 import numpy as np
 from scipy.integrate import ode
 from scipy.interpolate import interp1d, UnivariateSpline
 
 from .ifmr import IFMR, get_data
 from .masses import PowerLawIMF, MassBins, Pk
-
 
 # TODO optionally support units for some things
 
@@ -45,10 +46,15 @@ class EvolvedMF:
         Times, in years, at which to output PDMF. Defines the shape of many
         outputted attributes.
 
-    Ndot : float
-        Represents rate of change of the number of stars N over time, in stars
-        per Myr. Regulates low-mass object depletion (ejection) due to dynamical
-        evolution.
+    esc_rate : float or callable
+        Represents rate of change of stars over time due to tidal
+        ejections (and other escape mechanisms). Regulates low-mass object
+        depletion (ejection) due to dynamical evolution.
+        If a float, will apply a constant escape rate across all time. If a
+        callable, must take in a time `t` in Myr and output a (negative) float
+        representing the rate at that time.
+        Rates must be in units of stars per Myr if `esc_norm` is 'N' or solar
+        masses per Myr if `esc_norm` is 'M'.
 
     N0 : int or None, optional
         Total initial number of stars, over all bins.
@@ -75,11 +81,23 @@ class EvolvedMF:
         Initial cluster escape velocity, in km/s, for use in the computation of
         BH natal kick effects. Defaults to 90 km/s.
 
+    stellar_evolution : bool, optional
+        Whether or not to include stellar evolution effects in the mass function
+        evolution. There is not much real sense in turning this off, but it can
+        be useful for testing escape rates on their own.
+
     md : float, optional
         Depletion mass, below which stars are preferentially disrupted during
         the stellar escape derivatives.
         The default 1.2 is based on Lamers et al. (2013) and shouldn't be
         changed unless you know what you're doing.
+
+    esc_norm : {'N', 'M'}, optional
+        Defines whether the given `esc_rate` is to be given in stars or mass
+        per unit time. This affects the normalization of the escape derivatives.
+        Note that a constant :math:`\dot{N}` will give rise to an increasing
+        :math:`\dot{M}` over time, and vice versa, so the two options are not
+        directly interchangeable. Defaults to 'N'.
 
     binning_breaks : list of float, optional
         The binning break masses to use when constructing the mass bins,
@@ -101,8 +119,8 @@ class EvolvedMF:
         Total number of output times (len of tout parameter).
 
     alphas : ndarray
-        Array[nout, nbin] of  PDMF slopes. If Ndot = 0, this is defined entirely
-        by the IMF.
+        Array[nout, nbin] of  PDMF slopes. If esc_rate = 0, this is defined
+        entirely by the IMF.
 
     Ns : ndarray
         Array[nout, nbin] of the total number of (main sequence) stars in each
@@ -216,9 +234,10 @@ class EvolvedMF:
     def nmr(self):
         return (np.c_[self.Nr][-1] > 10 * self.Nmin).sum()
 
-    def __init__(self, IMF, nbins, FeH, tout, Ndot, N0=5e5,
+    def __init__(self, IMF, nbins, FeH, tout, esc_rate, N0=5e5,
                  tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
-                 natal_kicks=False, vesc=90, md=1.2,
+                 natal_kicks=False, vesc=90, stellar_evolution=True,
+                 md=1.2, esc_norm='N',
                  binning_breaks=None, binning_method='default'):
 
         # ------------------------------------------------------------------
@@ -228,7 +247,19 @@ class EvolvedMF:
         # Supplied parameters
         self.tcc = tcc
         self.tout = np.atleast_1d(tout)
-        self.Ndot = Ndot
+
+        self.esc_rate = esc_rate
+        self._esc_norm = esc_norm
+        self._time_dep_esc = callable(esc_rate)
+
+        if not self._time_dep_esc and esc_rate > 0:
+            raise ValueError("'esc_rate' must be less than 0")
+
+        if esc_norm not in ('N', 'M'):
+            mssg = f"Invalid 'esc_norm' {esc_norm}, must be one of 'M', 'N'."
+            raise ValueError(mssg)
+
+        self._stellar_ev = stellar_evolution
 
         self.NS_ret = NS_ret
         self.BH_ret_int = BH_ret_int
@@ -236,9 +267,6 @@ class EvolvedMF:
         self._frem = {'WD': 1., 'NS': NS_ret, 'BH': BH_ret_int}
 
         self.FeH = FeH
-
-        if Ndot > 0:
-            raise ValueError("'Ndot' must be less than 0")
 
         # Initial-Final mass relations
         self.IFMR = IFMR(FeH)
@@ -310,7 +338,7 @@ class EvolvedMF:
         self._evolve()
 
     @classmethod
-    def from_powerlaw(cls, m_breaks, a_slopes, nbins, FeH, tout, Ndot,
+    def from_powerlaw(cls, m_breaks, a_slopes, nbins, FeH, tout, esc_rate,
                       N0=5e5, *args, **kwargs):
         '''Construct class based on a power-law IMF breaks and slopes, directly.
 
@@ -341,10 +369,15 @@ class EvolvedMF:
             Times, in years, at which to output PDMF. Defines the shape of many
             outputted attributes.
 
-        Ndot : float
-            Represents rate of change of the number of stars N over time, in
-            stars per Myr. Regulates low-mass object depletion (ejection) due
-            to dynamical evolution.
+        esc_rate : float or callable
+            Represents rate of change of stars over time due to tidal
+            ejections (and other escape mechanisms). Regulates low-mass object
+            depletion (ejection) due to dynamical evolution.
+            If a float, will apply a constant escape rate across all time. If a
+            callable, must take in a time `t` in Myr and output a (negative)
+            float representing the rate at that time.
+            Rates must be in units of stars per Myr if `esc_norm` is 'N' or
+            solar masses per Myr if `esc_norm` is 'M'.
 
         N0 : int or None, optional
             Total initial number of stars, over all bins.
@@ -359,7 +392,7 @@ class EvolvedMF:
             The created evolved MF object, using the created IMF.
         '''
         imf = PowerLawIMF(m_break=m_breaks, a=a_slopes, N0=N0, ext='zeros')
-        return cls(imf, nbins, FeH, tout, Ndot, N0=N0, *args, **kwargs)
+        return cls(imf, nbins, FeH, tout, esc_rate, N0=N0, *args, **kwargs)
 
     def compute_tms(self, mi):
         '''Compute main-sequence lifetime for a given mass `mi`'''
@@ -406,10 +439,13 @@ class EvolvedMF:
         self.nstep += 1
 
         # Compute stellar evolution derivatives
-        derivs_sev = self._derivs_sev(t, y)
+        if self._stellar_ev:
+            derivs_sev = self._derivs_sev(t, y)
+        else:
+            derivs_sev = self.massbins.blanks(packed=True)
 
-        # Only run the dynamical star losses `derivs_esc` if Ndot is not zero
-        if self.Ndot < 0:
+        # Only run the dynamical star losses `derivs_esc` if escape is not zero
+        if self._time_dep_esc or self.esc_rate < 0:
             derivs_esc = self._derivs_esc(t, y)
         else:
             derivs_esc = np.zeros_like(derivs_sev)
@@ -483,29 +519,12 @@ class EvolvedMF:
     def _derivs_esc(self, t, y):
         '''Derivatives relevant to mass loss due to escaping low-mass stars'''
 
-        # nb = self.nbin
-        md, Ndot = self.md, self.Ndot
-
         # Pull out individual arrays from y
         Ns, alpha, Nr, Mr = self.massbins.unpack_values(y, grouped_rem=True)
         dNs, dalpha, dNr, dMr = self.massbins.blanks(packed=False,
                                                      grouped_rem=True)
 
-        # If core collapsed, use different, simpler, algorithm
-        if t < self.tcc:
-
-            N_sum = np.sum(Ns) + np.sum(np.r_[Nr])
-            dNs += Ndot * Ns / N_sum
-
-            for c in range(len(Nr)):  # Each remnant class
-                sel = Nr[c] > 0
-                mr = Mr[c][sel] / Nr[c][sel]
-                dNr[c][sel] += Ndot * Nr[c][sel] / N_sum
-                dMr[c][sel] += mr * Ndot * Nr[c][sel] / N_sum
-
-            return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
-
-        # Stellar Integrals
+        # Compute various required quantities
 
         mto = self.compute_mto(t)
 
@@ -515,8 +534,45 @@ class EvolvedMF:
         P15 = Pk(alpha, 1.5, *bins_MS)
         P2 = Pk(alpha, 2, *bins_MS)
 
+        # floating point check for *very* thin bins (i.e. when mto ~ bin edge)
+        finite_mask = P1 > np.finfo(float).resolution
+
+        md = self.md
         ms = P2 / P1
-        depl_mask = ms < md
+        Ms = Ns * ms
+
+        # Determine total loss rate (normalization)
+
+        esc_rate = self.esc_rate(t) if self._time_dep_esc else self.esc_rate
+
+        # If not core collapsed, use different, simpler, algorithm
+
+        if t < self.tcc:
+
+            if self._esc_norm == 'M':
+                M_sum = np.sum(Ms[finite_mask]) + np.sum(np.r_[Mr])
+                dNs += esc_rate * Ns / M_sum
+
+                for c in range(len(Nr)):  # Each remnant class
+                    sel = Nr[c] > 0
+                    dNr[c][sel] += esc_rate * Nr[c][sel] / M_sum
+                    dMr[c][sel] += esc_rate * Mr[c][sel] / M_sum
+
+            elif self._esc_norm == 'N':
+                N_sum = np.sum(Ns) + np.sum(np.r_[Nr])
+                dNs += esc_rate * Ns / N_sum
+
+                for c in range(len(Nr)):  # Each remnant class
+                    sel = Nr[c] > 0
+                    mr = Mr[c][sel] / Nr[c][sel]
+                    dNr[c][sel] += esc_rate * Nr[c][sel] / N_sum
+                    dMr[c][sel] += mr * esc_rate * Nr[c][sel] / N_sum
+
+            return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
+
+        # Stellar Integrals
+
+        depl_mask = (ms < md) & finite_mask
 
         Is = (Ns * (1 - md ** (-0.5) * (P15 / P1)))[depl_mask]
 
@@ -538,7 +594,16 @@ class EvolvedMF:
 
         # Normalization
 
-        B = Ndot / (np.sum(Is) + np.sum(np.r_[Ir]))
+        P25 = Pk(alpha, 2.5, *bins_MS)
+        Js = (Ms * (1 - md ** (-0.5) * (P25 / P2)))[depl_mask]
+
+        if self._esc_norm == 'M':
+            P25 = Pk(alpha, 2.5, *bins_MS)
+            Js = (Ms * (1 - md ** (-0.5) * (P25 / P2)))[depl_mask]
+            B = esc_rate / (np.sum(Js) + np.sum(np.r_[Jr]))
+
+        elif self._esc_norm == 'N':
+            B = esc_rate / (np.sum(Is) + np.sum(np.r_[Ir]))
 
         # Derivatives
 
@@ -839,6 +904,15 @@ class EvolvedMF:
 
                     self.mr[c][iout, :] = mr
 
+        Mtot = self.Ms.sum(axis=1) + np.c_[self.Mr].sum(axis=1)
+        Ntot = self.Ns.sum(axis=1) + np.c_[self.Nr].sum(axis=1)
+        self.mmean = Mtot / Ntot
+
+        self.converged = sol.successful()
+        if not self.converged:
+            mssg = "ODE solver has *not* converged, this MF will not be valid."
+            warnings.warn(mssg)
+
 
 class EvolvedMFWithBH(EvolvedMF):
     r'''Evolve an IMF to a present-day mass function at a given age and f_BH.
@@ -872,10 +946,15 @@ class EvolvedMFWithBH(EvolvedMF):
         Times, in years, at which to output PDMF. Defines the shape of many
         outputted attributes.
 
-    Ndot : float
-        Represents rate of change of the number of stars N over time, in stars
-        per Myr. Regulates low-mass object depletion (ejection) due to dynamical
-        evolution.
+    esc_rate : float or callable
+        Represents rate of change of stars over time due to tidal
+        ejections (and other escape mechanisms). Regulates low-mass object
+        depletion (ejection) due to dynamical evolution.
+        If a float, will apply a constant escape rate across all time. If a
+        callable, must take in a time `t` in Myr and output a (negative) float
+        representing the rate at that time.
+        Rates must be in units of stars per Myr if `esc_norm` is 'N' or solar
+        masses per Myr if `esc_norm` is 'M'.
 
     f_BH : float
         The desired final BH mass fraction (0 to 1).
@@ -897,7 +976,7 @@ class EvolvedMFWithBH(EvolvedMF):
     not recommended as bins with N < 1 are physically meaningless.
     '''
 
-    def __init__(self, IMF, nbins, FeH, tout, Ndot, f_BH,
+    def __init__(self, IMF, nbins, FeH, tout, esc_rate, f_BH,
                  *args, **kwargs):
 
         self._fBH_target = np.atleast_1d(f_BH)
@@ -911,11 +990,11 @@ class EvolvedMFWithBH(EvolvedMF):
             raise ValueError(mssg)
 
         # leave BH_ret_dyn as default, will be ignored. BH_ret_int is fine
-        super().__init__(IMF, nbins, FeH, tout, Ndot,
+        super().__init__(IMF, nbins, FeH, tout, esc_rate,
                          *args, **kwargs)
 
     @classmethod
-    def from_powerlaw(cls, m_breaks, a_slopes, nbins, FeH, tout, Ndot, f_BH,
+    def from_powerlaw(cls, m_breaks, a_slopes, nbins, FeH, tout, esc_rate, f_BH,
                       N0=5e5, *args, **kwargs):
         '''Construct class based on a power-law IMF breaks and slopes, directly.
 
@@ -946,10 +1025,15 @@ class EvolvedMFWithBH(EvolvedMF):
             Times, in years, at which to output PDMF. Defines the shape of many
             outputted attributes.
 
-        Ndot : float
-            Represents rate of change of the number of stars N over time, in
-            stars per Myr. Regulates low-mass object depletion (ejection) due
-            to dynamical evolution.
+        esc_rate : float or callable
+            Represents rate of change of stars over time due to tidal
+            ejections (and other escape mechanisms). Regulates low-mass object
+            depletion (ejection) due to dynamical evolution.
+            If a float, will apply a constant escape rate across all time. If a
+            callable, must take in a time `t` in Myr and output a (negative)
+            float representing the rate at that time.
+            Rates must be in units of stars per Myr if `esc_norm` is 'N' or
+            solar masses per Myr if `esc_norm` is 'M'.
 
         f_BH : float
             The desired final BH mass fraction (0 to 1).
@@ -969,7 +1053,8 @@ class EvolvedMFWithBH(EvolvedMF):
             The created evolved MF object, using the created IMF.
         '''
         imf = PowerLawIMF(m_break=m_breaks, a=a_slopes, N0=N0, ext='zeros')
-        return cls(imf, nbins, FeH, tout, Ndot, f_BH, N0=N0, *args, **kwargs)
+        return cls(imf, nbins, FeH, tout, esc_rate, f_BH, N0=N0,
+                   *args, **kwargs)
 
     def _dyn_eject_BH(self, Mr_BH, Nr_BH, Mtot, fBH_target):
         '''Determine and remove BHs, to represent dynamical ejections.
@@ -1182,6 +1267,15 @@ class EvolvedMFWithBH(EvolvedMF):
                     mr[rem_mask] = Mr[c][rem_mask] / Nr[c][rem_mask]
 
                     self.mr[c][iout, :] = mr
+
+        Mtot = self.Ms.sum(axis=1) + np.c_[self.Mr].sum(axis=1)
+        Ntot = self.Ns.sum(axis=1) + np.c_[self.Nr].sum(axis=1)
+        self.mmean = Mtot / Ntot
+
+        self.converged = sol.successful()
+        if not self.converged:
+            mssg = "ODE solver has *not* converged, this MF will not be valid."
+            warnings.warn(mssg)
 
 
 class InitialBHPopulation:
