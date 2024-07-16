@@ -100,6 +100,9 @@ class PowerLawIMF:
         If ext=0, the IMF will still be normalized to N0 within the mass bounds.
     '''
 
+    def __repr__(self):
+        return f"PowerLawIMF(m_break={self.mb}, a={self.a}, N0={self.N0})"
+
     @property
     def mmean(self):
         '''The overall mean individual stellar mass of this IMF'''

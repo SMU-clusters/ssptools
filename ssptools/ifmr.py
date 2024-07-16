@@ -35,6 +35,9 @@ class IFMR:
         Alias to WD_mf[1], for backwards compatibility
     '''
 
+    def __repr__(self):
+        return f"IFMR(FeH={self.FeH})"
+
     def __init__(self, FeH):
 
         # ------------------------------------------------------------------
