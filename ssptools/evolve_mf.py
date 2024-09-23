@@ -321,17 +321,25 @@ class EvolvedMF:
 
         self.natal_kicks = natal_kicks
 
-        if kick_method.lower() == 'maxwellian':
-            self._kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
-                                 FeH=self.IFMR.FeH_BH, vdisp=kick_vdisp)
+        match kick_method.casefold():
 
-        elif kick_method.lower() == 'sigmoid':
-            self._kick_kw = dict(method=kick_method, f_kick=f_kick,
-                                 slope=kick_slope, scale=kick_scale)
+            case 'maxwellian' | 'f12' | 'fryer2012':
 
-        else:
-            mssg = f"Invalid natal kick algorithm '{kick_method=}'"
-            raise ValueError(mssg)
+                from .ifmr import _check_F12_BH_FeH_bounds
+                FeH_BH = _check_F12_BH_FeH_bounds(FeH)
+
+                self._kick_kw = dict(
+                    method=kick_method, f_kick=f_kick, vesc=vesc,
+                    FeH=FeH_BH, vdisp=kick_vdisp
+                )
+
+            case 'sigmoid':
+                self._kick_kw = dict(method=kick_method, f_kick=f_kick,
+                                     slope=kick_slope, scale=kick_scale)
+
+            case _:
+                mssg = f"Invalid natal kick algorithm '{kick_method=}'"
+                raise ValueError(mssg)
 
         # ------------------------------------------------------------------
         # Finally, evolve the population
@@ -1259,17 +1267,23 @@ class InitialBHPopulation:
 
             self.natal_kicks = natal_kicks
 
-            if kick_method.lower() == 'maxwellian':
-                kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
-                               FeH=self.IFMR.FeH_BH, vdisp=kick_vdisp)
+            match kick_method.casefold():
 
-            elif kick_method.lower() == 'sigmoid':
-                kick_kw = dict(method=kick_method, f_kick=f_kick,
-                               slope=kick_slope, scale=kick_scale)
+                case 'maxwellian' | 'f12' | 'fryer2012':
 
-            else:
-                mssg = f"Invalid natal kick algorithm '{kick_method=}'"
-                raise ValueError(mssg)
+                    from .ifmr import _check_F12_BH_FeH_bounds
+                    FeH_BH = _check_F12_BH_FeH_bounds(FeH)
+
+                    kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
+                                   FeH=FeH_BH, vdisp=kick_vdisp)
+
+                case 'sigmoid':
+                    kick_kw = dict(method=kick_method, f_kick=f_kick,
+                                   slope=kick_slope, scale=kick_scale)
+
+                case _:
+                    mssg = f"Invalid natal kick algorithm '{kick_method=}'"
+                    raise ValueError(mssg)
 
             *_, self._kicked_M = kicks.natal_kicks(M_BH, N_BH, **kick_kw)
 

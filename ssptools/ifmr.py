@@ -27,7 +27,7 @@ def get_data(path):
 # --------------------------------------------------------------------------
 
 
-def _MIST2018_WD_predictor(FeH):
+def _MIST18_WD_predictor(FeH):
     '''Return func(mi), WD_mi, WD_mf based on MIST 2018 interpolations
     '''
 
@@ -86,11 +86,8 @@ def _MIST2018_WD_predictor(FeH):
 # --------------------------------------------------------------------------
 
 
-def _F12_BH_predictor(FeH):
-
-    # ----------------------------------------------------------------------
-    # Check [Fe/H] is within model grid and adjust otherwise
-    # ----------------------------------------------------------------------
+def _check_F12_BH_FeH_bounds(FeH):
+    '''Sometimes this is needed elsewhere (e.g. kicks) so make separate func'''
 
     bhgrid = np.array([float(fn.stem.split('FEH')[-1])
                        for fn in get_data('sse').glob('MP*dat')])
@@ -100,11 +97,23 @@ def _F12_BH_predictor(FeH):
 
     if FeH < (fback := np.min(bhgrid)):
         logging.debug(mssg.format(FeH, 'BH', 'minimum', fback))
-        FeH = fback
+        return fback
 
     elif FeH > (fback := np.max(bhgrid)):
         logging.debug(mssg.format(FeH, 'BH', 'maximum', fback))
-        FeH = fback
+        return fback
+
+    else:
+        return FeH
+
+
+def _F12_BH_predictor(FeH):
+
+    # ----------------------------------------------------------------------
+    # Check [Fe/H] is within model grid and adjust otherwise
+    # ----------------------------------------------------------------------
+
+    FeH = _check_F12_BH_FeH_bounds(FeH)
 
     # ----------------------------------------------------------------------
     # Load BH IFMR values
@@ -147,7 +156,9 @@ class IFMR:
     def __repr__(self):
         return f"IFMR(FeH={self.FeH})"
 
-    def __init__(self, FeH):
+    def __init__(self, FeH, *, NS_mass=1.4,
+                 WD_method='mist18', WD_kwargs=None,
+                 BH_method='fryer12', BH_kwargs=None):
 
         # ------------------------------------------------------------------
         # Check metallicity bounds
@@ -161,7 +172,19 @@ class IFMR:
         # Black Holes
         # ------------------------------------------------------------------
 
-        self._BH_spline, self.BH_mi, self.BH_mf = _F12_BH_predictor(FeH)
+        if BH_kwargs is None:
+            BH_kwargs = dict()
+
+        match BH_method.casefold():
+
+            case 'fryer12' | 'f12':
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _F12_BH_predictor(**BH_kwargs)
+
+            case _:
+                raise ValueError(f"Invalid BH IFMR method: {BH_method}")
+
+        self._BH_spline, self.BH_mi, self.BH_mf = BH_func, BH_mi, BH_mf
 
         # self.mBH_min, self.mBH_max = np.min(BH_mf), np.max(BH_mf)
         self.mBH_min = self.BH_mf.lower
@@ -170,7 +193,19 @@ class IFMR:
         # White Dwarfs
         # ------------------------------------------------------------------
 
-        self._WD_spline, self.WD_mi, self.WD_mf = _MIST2018_WD_predictor(FeH)
+        if WD_kwargs is None:
+            WD_kwargs = dict()
+
+        match WD_method.casefold():
+
+            case 'mist18' | 'm18' | 'mist2018':
+                WD_kwargs.setdefault('FeH', FeH)
+                WD_func, WD_mi, WD_mf, = _MIST18_WD_predictor(**WD_kwargs)
+
+            case _:
+                raise ValueError(f"Invalid WD IFMR method: {WD_method}")
+
+        self._WD_spline, self.WD_mi, self.WD_mf = WD_func, WD_mi, WD_mf
 
         self.mWD_max = self.WD_mf.upper
 
@@ -178,8 +213,10 @@ class IFMR:
         # Neutron Stars
         # ------------------------------------------------------------------
 
+        self._NS_mass = NS_mass
+
         self.NS_mi = bounds(self.WD_mi[1], self.BH_mi[0])
-        self.NS_mf = bounds(1.4, 1.4)
+        self.NS_mf = bounds(self._NS_mass, self._NS_mass)
 
     def predict_type(self, m_in):
         '''Predict the remnant type (WD, NS, BH) given the initial mass(es)'''
@@ -200,7 +237,7 @@ class IFMR:
         final = np.where(
             m_in >= self.BH_mi[0], self._BH_spline(m_in),
             np.where(
-                (self.WD_mi[1] < m_in) & (m_in <= self.BH_mi[0]), 1.4,
+                (self.WD_mi[1] < m_in) & (m_in <= self.BH_mi[0]), self._NS_mass,
                 self._WD_spline(np.array(m_in))
             )
         )

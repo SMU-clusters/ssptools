@@ -45,6 +45,7 @@ def _sigmoid_retention_frac(m, slope, scale):
 
 
 def _F12_fallback_frac(FeH):
+    '''Note there are no checks on FeH here, make sure it's within the grid.'''
 
     # load in the ifmr data to interpolate fb from mr
     feh_path = get_data(f"sse/MP_FEH{FeH:+.2f}.dat")  # .2f snaps to the grid
@@ -85,14 +86,16 @@ def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
 
 def natal_kicks(Mr_BH, Nr_BH, f_kick, method='sigmoid', **ret_kwargs):
 
-    if method.lower() == 'sigmoid':
-        f_ret = _sigmoid_retention_frac
+    match method.casefold():
 
-    elif method.lower() == 'maxwellian':
-        f_ret = _maxwellian_retention_frac
+        case 'sigmoid':
+            f_ret = _sigmoid_retention_frac
 
-    else:
-        raise ValueError(f"Invalid kick distribution method: {method}")
+        case 'maxwellian' | 'f12' | 'fryer2012':
+            f_ret = _maxwellian_retention_frac
+
+        case _:
+            raise ValueError(f"Invalid kick distribution method: {method}")
 
     # If no given total kick fraction, use old-style of directly using f_ret
     if f_kick is None:
