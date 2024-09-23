@@ -6,8 +6,8 @@ import warnings
 import numpy as np
 from scipy.integrate import ode
 
+from . import kicks
 from .ifmr import IFMR, get_data
-from .kicks import maxwellian_natal_kicks
 from .masses import PowerLawIMF, MassBins, Pk
 
 # TODO optionally support units for some things
@@ -237,7 +237,8 @@ class EvolvedMF:
     def __init__(self, IMF, nbins, FeH, tout, esc_rate, N0=5e5,
                  tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
                  natal_kicks=False, kick_method='maxwellian',
-                 vesc=90, kick_vdisp=265.,
+                 vesc=90, kick_vdisp=265., f_kick=None,
+                 kick_slope=1, kick_scale=20,
                  stellar_evolution=True, md=1.2, esc_norm='N',
                  binning_breaks=None, binning_method='default'):
 
@@ -318,13 +319,15 @@ class EvolvedMF:
         # Setup BH natal kicks
         # ------------------------------------------------------------------
 
-        self.vesc = vesc
         self.natal_kicks = natal_kicks
 
         if kick_method.lower() == 'maxwellian':
-            self._natal_kick_alg = maxwellian_natal_kicks
-            self._kick_kw = dict(vesc=vesc, FeH=self.IFMR.FeH_BH,
-                                 vdisp=kick_vdisp)
+            self._kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
+                                 FeH=self.IFMR.FeH_BH, vdisp=kick_vdisp)
+
+        elif kick_method.lower() == 'sigmoid':
+            self._kick_kw = dict(method=kick_method, f_kick=f_kick,
+                                 slope=kick_slope, scale=kick_scale)
 
         else:
             mssg = f"Invalid natal kick algorithm '{kick_method=}'"
@@ -607,6 +610,9 @@ class EvolvedMF:
         elif self._esc_norm == 'N':
             B = esc_rate / (np.sum(Is) + np.sum(np.r_[Ir]))
 
+        else:
+            raise ValueError(f"Invalid 'esc_norm' {self._esc_norm}")
+
         # Derivatives
 
         dNs[depl_mask] += B * Is
@@ -781,8 +787,8 @@ class EvolvedMF:
 
                     # First remove mass from all bins by natal kicks, if desired
                     if self.natal_kicks:
-                        *_, kicked = self._natal_kick_alg(Mr.BH, Nr.BH,
-                                                          **self._kick_kw)
+                        *_, kicked = kicks.natal_kicks(Mr.BH, Nr.BH,
+                                                       **self._kick_kw)
                         M_eject -= kicked
 
                     # Remove dynamical BH ejections
@@ -1128,7 +1134,7 @@ class EvolvedMFWithBH(EvolvedMF):
                     #  Do it first because we dont control the exact amount so
                     #  this could make the target fBH invalid afterwards
                     if self.natal_kicks:
-                        self._natal_kick_alg(Mr.BH, Nr.BH, **self._kick_kw)
+                        kicks.natal_kicks(Mr.BH, Nr.BH, **self._kick_kw)
 
                     Mtot = np.r_[Mr].sum() + Ms.sum()
                     Mbhtot = Mr.BH.sum()
@@ -1241,16 +1247,9 @@ class InitialBHPopulation:
         return self.Mtot / M_cluster
 
     def __init__(self, M_BH, N_BH, BH_bins, FeH, *,
-                 natal_kicks=False, kick_method='maxwellian',
-                 vesc=90, kick_vdisp=265.):
+                 natal_kicks=False, kick_method='maxwellian', f_kick=None,
+                 vesc=90, kick_vdisp=265., kick_slope=1, kick_scale=20):
         '''Should not init from this, use provided classmethods.'''
-
-        # ------------------------------------------------------------------
-        # Attributes needed for stolen natal kick functions from `EvolvedMF`
-        # ------------------------------------------------------------------
-
-        self.Nmin = 0.1
-        self.vesc = vesc
 
         # ------------------------------------------------------------------
         # Optionally perform all natal kicks on the input mass arrays
@@ -1258,15 +1257,21 @@ class InitialBHPopulation:
 
         if natal_kicks:
 
+            self.natal_kicks = natal_kicks
+
             if kick_method.lower() == 'maxwellian':
-                *_, self._kicked_M = maxwellian_natal_kicks(
-                    M_BH, N_BH,
-                    vesc=vesc, FeH=FeH, vdisp=kick_vdisp
-                )
+                kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
+                               FeH=self.IFMR.FeH_BH, vdisp=kick_vdisp)
+
+            elif kick_method.lower() == 'sigmoid':
+                kick_kw = dict(method=kick_method, f_kick=f_kick,
+                               slope=kick_slope, scale=kick_scale)
 
             else:
                 mssg = f"Invalid natal kick algorithm '{kick_method=}'"
                 raise ValueError(mssg)
+
+            *_, self._kicked_M = kicks.natal_kicks(M_BH, N_BH, **kick_kw)
 
         # ------------------------------------------------------------------
         # Compute and store all final BH mass and number arrays and values

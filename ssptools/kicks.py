@@ -4,18 +4,21 @@
 from .ifmr import get_data
 
 import numpy as np
+from scipy.special import erf
 import scipy.interpolate as interp
 
 
-__all__ = ["maxwellian_natal_kicks"]
+__all__ = ["natal_kicks"]
 
 
-def _maxwellian_retention_frac(vesc, fb, vdisp=265., vmax=1000):
+def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000):
 
     def _maxwellian(x, a):
         norm = np.sqrt(2 / np.pi)
         exponent = (x ** 2) * np.exp((-1 * (x ** 2)) / (2 * (a ** 2)))
         return norm * exponent / a ** 3
+
+    fb = _F12_fallback_frac(FeH)(m)
 
     if fb >= 1.0:
         return 1.0
@@ -34,7 +37,14 @@ def _maxwellian_retention_frac(vesc, fb, vdisp=265., vmax=1000):
     return retention
 
 
-def _fallback_frac(FeH):
+def _sigmoid_retention_frac(m, slope, scale):
+    # TODO better coefficient names than a, b
+    # b sets left-right transform, i.e. ~m of sigmoid turn
+    # a sets "slope" of turn, a=0 is ~flat a<0 loses more high mass bin than low
+    return erf(np.exp(slope * (m - scale)))
+
+
+def _F12_fallback_frac(FeH):
 
     # load in the ifmr data to interpolate fb from mr
     feh_path = get_data(f"sse/MP_FEH{FeH:+.2f}.dat")  # .2f snaps to the grid
@@ -47,48 +57,12 @@ def _fallback_frac(FeH):
                            bounds_error=False, fill_value=(0.0, 1.0))
 
 
-def maxwellian_natal_kicks(Mr_BH, Nr_BH, vesc, FeH, *, vdisp=265.):
-    '''Computes the effects of BH natal-kicks on the mass and number of BHs
-
-    Determines the effects of BH natal-kicks based on the fallback fraction
-    and escape velocity of this population.
-
-    Both input arrays are modified *in place*, as well as returned.
-
-    Parameters
-    ----------
-    Mr_BH : ndarray
-        Array[nbin] of the total initial masses of black holes in each
-        BH mass bin
-
-    Nr_BH : ndarray
-        Array[nbin] of the total initial numbers of black holes in each
-        BH mass bin
-
-    vesc : float
-        Initial cluster escape velocity, in km/s, for use in the
-        determining the magnitude of BH natal kick losses from the cluster.
-
-    FeH : float
-        Metallicity, in solar fraction [Fe/H].
-
-    Returns
-    -------
-    Mr_BH : ndarray
-        Array[nbin] of the total final masses of black holes in each
-        BH mass bin, after natal kicks
-
-    Nr_BH : ndarray
-        Array[nbin] of the total final numbers of black holes in each
-        BH mass bin, after natal kicks
-
-    natal_ejecta : float
-        The total mass of BHs ejected through natal kicks
+def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
+    '''natal kicks without a modulating total mass to eject, just ejecting
+    all mass in each bin based on the retention fraction
+    M_BH,f = M_BH,i * fret(mj)
     '''
-
     natal_ejecta = 0.0
-
-    fb_interp = _fallback_frac(FeH)
 
     for j in range(Mr_BH.size):
 
@@ -96,22 +70,60 @@ def maxwellian_natal_kicks(Mr_BH, Nr_BH, vesc, FeH, *, vdisp=265.):
         if Nr_BH[j] < 0.1:
             continue
 
-        # Interpolate fallback fraction at this mr
-        fb = fb_interp(Mr_BH[j] / Nr_BH[j])
+        # Compute retention fraction
+        retention = f_ret(Mr_BH[j] / Nr_BH[j], **ret_kwargs)
 
-        if fb >= 1.0:  # bracket fb at 100%, meaningless value above that
-            continue
+        # keep track of how much we eject
+        natal_ejecta += Mr_BH[j] * (1 - retention)
 
-        else:
-
-            # Compute retention fraction
-            retention = _maxwellian_retention_frac(vesc, fb=fb, vdisp=vdisp)
-
-            # keep track of how much we eject
-            natal_ejecta += Mr_BH[j] * (1 - retention)
-
-            # eject the mass
-            Mr_BH[j] *= retention
-            Nr_BH[j] *= retention
+        # eject the mass
+        Mr_BH[j] *= retention
+        Nr_BH[j] *= retention
 
     return Mr_BH, Nr_BH, natal_ejecta
+
+
+def natal_kicks(Mr_BH, Nr_BH, f_kick, method='sigmoid', **ret_kwargs):
+
+    if method.lower() == 'sigmoid':
+        f_ret = _sigmoid_retention_frac
+
+    elif method.lower() == 'maxwellian':
+        f_ret = _maxwellian_retention_frac
+
+    else:
+        raise ValueError(f"Invalid kick distribution method: {method}")
+
+    # If no given total kick fraction, use old-style of directly using f_ret
+    if f_kick is None:
+        return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs)
+
+    else:
+        raise NotImplementedError
+
+    # M_tot = Mr_BH.sum()
+    # # Total amount to kick
+    # M_kick = f_kick * M_tot
+
+    # try:
+    #     retentions = np.array([
+    #         f_ret(Mr_BH[j] / Nr_BH[j], **ret_kwargs) for j in range(Mr_BH.size)
+    #     ])
+    # except TypeError as err:
+    #     mssg = f"missing required kwargs for kick method '{method}': {err}"
+    #     raise TypeError(mssg)
+
+    # # norm = np.sum(retentions * Mr_BH) / (M_tot * (1 - f_kick))
+
+    # # Mr_BH *= retentions / norm
+    # # Nr_BH *= retentions / norm
+
+    # print(f'{retentions=}')
+    # print(f'{(1 - f_kick)=}')
+    # print(f'{retentions * (1 - f_kick)=}')
+    # print(f'{Mr_BH * retentions * (1 - f_kick)=}')
+
+    # Mr_BH *= retentions * (1 - f_kick)
+    # Nr_BH *= retentions * (1 - f_kick)
+
+    # return Mr_BH, Nr_BH, M_kick
