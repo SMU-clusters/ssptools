@@ -235,11 +235,13 @@ class EvolvedMF:
         return (np.c_[self.Nr][-1] > 10 * self.Nmin).sum()
 
     def __init__(self, IMF, nbins, FeH, tout, esc_rate, N0=5e5,
-                 tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
+                 tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0, *,
                  natal_kicks=False, kick_method='maxwellian',
                  vesc=90, kick_vdisp=265., f_kick=None,
                  kick_slope=1, kick_scale=20,
                  stellar_evolution=True, md=1.2, esc_norm='N',
+                 BH_IFMR_method='fryer12', WD_IFMR_method='mist18',
+                 BH_IFMR_kwargs=None, WD_IFMR_kwargs=None,
                  binning_breaks=None, binning_method='default'):
 
         # ------------------------------------------------------------------
@@ -271,7 +273,9 @@ class EvolvedMF:
         self.FeH = FeH
 
         # Initial-Final mass relations
-        self.IFMR = IFMR(FeH)
+        self.IFMR = IFMR(FeH,
+                         WD_method=WD_IFMR_method, WD_kwargs=WD_IFMR_kwargs,
+                         BH_method=BH_IFMR_method, BH_kwargs=BH_IFMR_kwargs)
 
         # Minimum of stars to call a bin "empty"
         self.Nmin = 0.1
@@ -1310,7 +1314,9 @@ class InitialBHPopulation:
 
     @classmethod
     def from_IMF(cls, IMF, nbins, FeH, N0=5e5, *, natal_kicks=True,
-                 binning_breaks=None, binning_method='default', **kwargs):
+                 binning_breaks=None, binning_method='default',
+                 BH_IFMR_method='fryer12', WD_IFMR_method='mist18',
+                 BH_IFMR_kwargs=None, WD_IFMR_kwargs=None, **kwargs):
         '''Initialize a BH population by evolving from an IMF.
 
         Based on a given IMF, sharing many arguments with `EvolvedMF`, generate
@@ -1433,7 +1439,8 @@ class InitialBHPopulation:
         # power-law IMF slopes and bins
         # ------------------------------------------------------------------
 
-        _ifmr = IFMR(FeH)
+        _ifmr = IFMR(FeH, WD_method=WD_IFMR_method, WD_kwargs=WD_IFMR_kwargs,
+                     BH_method=BH_IFMR_method, BH_kwargs=BH_IFMR_kwargs)
 
         binning_breaks = IMF.mb if binning_breaks is None else binning_breaks
 
@@ -1558,7 +1565,9 @@ class InitialBHPopulation:
 
     @classmethod
     def from_BHMF(cls, m_breaks, a_slopes, nbins, FeH, N0=1000, *,
-                  natal_kicks=True, binning_method='default', **kwargs):
+                  natal_kicks=True, binning_method='default',
+                  BH_IFMR_method='fryer12', WD_IFMR_method='mist18',
+                  BH_IFMR_kwargs=None, WD_IFMR_kwargs=None, **kwargs):
         '''Initialize a BH population based on a given power-law mass function.
 
         Based on an explicit given power-law parametrization of a BH mass
@@ -1601,7 +1610,10 @@ class InitialBHPopulation:
 
         MF = PowerLawIMF(m_breaks, a_slopes, N0=N0)
 
-        bins = MassBins(m_breaks, nbins, imf=MF, ifmr=IFMR(FeH),
+        _ifmr = IFMR(FeH, WD_method=WD_IFMR_method, WD_kwargs=WD_IFMR_kwargs,
+                     BH_method=BH_IFMR_method, BH_kwargs=BH_IFMR_kwargs)
+
+        bins = MassBins(m_breaks, nbins, imf=MF, ifmr=_ifmr,
                         binning_method=binning_method).bins.MS
 
         N_BH, M_BH, _ = MF.binned_eval(bins)
