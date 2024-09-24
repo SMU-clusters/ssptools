@@ -23,6 +23,41 @@ def get_data(path):
 
 
 # --------------------------------------------------------------------------
+# Predictor helpers
+# --------------------------------------------------------------------------
+
+
+def _powerlaw_predictor(exponent, slope, scale, m_lower, m_upper):
+    '''slope * mi^exponent + scale'''
+
+    # TODO should warn if func(mi) > mi, wouldn't make physical sense lol
+
+    def line(mi):
+        return (slope * mi**exponent) + scale
+
+    if (slope == 0.0) and (scale == 0.0):
+        mssg = (f"Invalid line parameter (m={slope}, b={scale}, k={exponent}); "
+                "cannot be zero at all times")
+        raise ValueError(mssg)
+
+    elif m_lower < 0.0:
+        raise ValueError(f"Invalid line parameter; {m_lower=} cannot be < 0")
+
+    elif m_lower > m_upper:
+        raise ValueError(f"Invalid line parameter; "
+                         f"{m_lower=} cannot be greater than {m_upper=}")
+
+    elif ((scale / slope < 0.0)
+            and (m_lower < (-scale / slope)**(1 / exponent) <= m_upper)):
+
+        mssg = (f"Invalid line parameter (m={slope}, b={scale}, k={exponent}); "
+                f"function cannot have roots between {m_lower=} and {m_upper=}")
+        raise ValueError(mssg)
+
+    return line
+
+
+# --------------------------------------------------------------------------
 # White Dwarf Initial-Final mass predictors
 # --------------------------------------------------------------------------
 
@@ -81,6 +116,18 @@ def _MIST18_WD_predictor(FeH):
     return WD_spline, WD_mi, WD_mf
 
 
+def _linear_WD_predictor(slope=0.15, scale=0.5, m_upper=5.5):
+    '''Just a simple line. m_upper is (soft) maximum initial mass'''
+
+    WD_line = _powerlaw_predictor(1, slope, scale, m_lower=0.0, m_upper=m_upper)
+
+    # Don't actually limit function, just suggest this limit
+    WD_mi = bounds(0.0, m_upper)
+
+    WD_mf = bounds(WD_line(0.0), WD_line(m_upper))
+
+    return WD_line, WD_mi, WD_mf
+
 # --------------------------------------------------------------------------
 # Black Hole Initial-Final mass predictors
 # --------------------------------------------------------------------------
@@ -135,6 +182,31 @@ def _F12_BH_predictor(FeH):
     return BH_spline, BH_mi, BH_mf
 
 
+def _linear_BH_predictor(slope=0.4, scale=0.7, m_lower=19):
+    '''Just a simple line. m_lower is minimum initial mass'''
+
+    BH_line = _powerlaw_predictor(1, slope, scale,
+                                  m_lower=m_lower, m_upper=np.inf)
+
+    BH_mi = bounds(m_lower, np.inf)
+
+    BH_mf = bounds(BH_line(m_lower), np.inf)
+
+    return BH_line, BH_mi, BH_mf
+
+
+def _powerlaw_BH_predictor(exponent=3, slope=3e-5, scale=14, m_lower=19):
+
+    BH_line = _powerlaw_predictor(exponent, slope, scale,
+                                  m_lower=m_lower, m_upper=np.inf)
+
+    BH_mi = bounds(m_lower, np.inf)
+
+    BH_mf = bounds(BH_line(m_lower), np.inf)
+
+    return BH_line, BH_mi, BH_mf
+
+
 # --------------------------------------------------------------------------
 # Combined IFMR class for all remnant types
 # --------------------------------------------------------------------------
@@ -160,13 +232,7 @@ class IFMR:
                  WD_method='mist18', WD_kwargs=None,
                  BH_method='fryer12', BH_kwargs=None):
 
-        # ------------------------------------------------------------------
-        # Check metallicity bounds
-        # ------------------------------------------------------------------
-
         self.FeH = FeH
-
-        self._check_feh_bounds()
 
         # ------------------------------------------------------------------
         # Black Holes
@@ -180,6 +246,12 @@ class IFMR:
             case 'fryer12' | 'f12':
                 BH_kwargs.setdefault('FeH', FeH)
                 BH_func, BH_mi, BH_mf, = _F12_BH_predictor(**BH_kwargs)
+
+            case 'linear' | 'line':
+                BH_func, BH_mi, BH_mf, = _linear_BH_predictor(**BH_kwargs)
+
+            case 'power' | 'powerlaw' | 'pl':
+                BH_func, BH_mi, BH_mf, = _powerlaw_BH_predictor(**BH_kwargs)
 
             case _:
                 raise ValueError(f"Invalid BH IFMR method: {BH_method}")
@@ -201,6 +273,9 @@ class IFMR:
             case 'mist18' | 'm18' | 'mist2018':
                 WD_kwargs.setdefault('FeH', FeH)
                 WD_func, WD_mi, WD_mf, = _MIST18_WD_predictor(**WD_kwargs)
+
+            case 'linear' | 'line':
+                WD_func, WD_mi, WD_mf, = _linear_WD_predictor(**WD_kwargs)
 
             case _:
                 raise ValueError(f"Invalid WD IFMR method: {WD_method}")
