@@ -695,6 +695,13 @@ class EvolvedMF:
                 mssg = 'Invalid `M_eject`, must be less than total Mr_BH'
                 raise ValueError(mssg)
 
+            mr_BH_j = Mr_BH[j] / Nr_BH[j]
+
+            # This will never get ejected below so just move on for now
+            # TODO this is indicative of problems with Nmin, why does it exist?
+            if M_eject / mr_BH_j < self.Nmin:
+                break
+
             # Skip empty bins
             if Nr_BH[j] < self.Nmin:
                 continue
@@ -708,8 +715,6 @@ class EvolvedMF:
 
             # Remove required fraction of the last affected bin
             else:
-
-                mr_BH_j = Mr_BH[j] / Nr_BH[j]
 
                 Mr_BH[j] -= M_eject
                 Nr_BH[j] -= M_eject / (mr_BH_j)
@@ -802,6 +807,13 @@ class EvolvedMF:
                         *_, kicked = kicks.natal_kicks(Mr.BH, Nr.BH,
                                                        **self._kick_kw)
                         M_eject -= kicked
+
+                    if M_eject < 0:
+                        mssg = (f"Natal kicks already removed {-M_eject} Msun "
+                                "more than total ejections desired by "
+                                f"'BH_ret_dyn={self.BH_ret_dyn}'. "
+                                "Increase BH_ret_dyn or alter natal kicks.")
+                        raise ValueError(mssg)
 
                     # Remove dynamical BH ejections
                     self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
@@ -1039,6 +1051,7 @@ class EvolvedMFWithBH(EvolvedMF):
             j -= 1
 
             # Skip empty bins
+            # TODO if Mrem < Nmin * mj, this func will fail (see other version)
             if Nr_BH[j] < self.Nmin:
                 continue
 
@@ -1158,7 +1171,7 @@ class EvolvedMFWithBH(EvolvedMF):
                             f"Target `f_BH` ({fBH_target}) is greater than "
                             f"f_BH formed at t={ti:.1f} ({fBH_current:.3f}; "
                             f"after natal kicks). Reduce `f_BH`, alter IMF "
-                            f"slopes or turn off natal kicks."
+                            f"slopes or turn off / alter natal kicks."
                         )
                         raise ValueError(mssg)
 
