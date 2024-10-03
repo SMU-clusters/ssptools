@@ -57,6 +57,33 @@ def _powerlaw_predictor(exponent, slope, scale, m_lower, m_upper):
     return line
 
 
+def _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks):
+    # borken power laws of N componenets, not normalized to be smooth
+
+    def lines(mi):
+        bounds = [(lw_bnd <= mi) & (mi <= up_bnd)
+                  for lw_bnd, up_bnd in zip(m_breaks[:-1], m_breaks[1:])]
+
+        vals = (slopes * mi[..., np.newaxis]**exponents + scales).T
+
+        return np.select(bounds, vals, default=np.nan)  # nan?
+
+    # Coerce all inputs to arrays, just in case
+    exponents = np.asanyarray(exponents)
+    slopes = np.asanyarray(slopes)
+    scales = np.asanyarray(scales)
+    m_breaks = np.asanyarray(m_breaks)
+
+    # Just re-use the checks from _powerlaw_predictor, but ignore output
+    for i in range(exponents.size):
+        _powerlaw_predictor(
+            exponent=exponents[i], slope=slopes[i], scale=scales[i],
+            m_lower=m_breaks[i], m_upper=m_breaks[i + 1]
+        )
+
+    return lines
+
+
 # --------------------------------------------------------------------------
 # White Dwarf Initial-Final mass predictors
 # --------------------------------------------------------------------------
@@ -207,6 +234,30 @@ def _powerlaw_BH_predictor(exponent=3, slope=3e-5, scale=14, m_lower=19):
     return BH_line, BH_mi, BH_mf
 
 
+def _brokenpl_BH_predictor(exponents=[1, 3, 1], slopes=[1, 6e-4, 0.43],
+                           scales=[0, 0, 0], m_breaks=[20, 22, 36, 100]):
+    import scipy.optimize as opt
+
+    # todo probably wont accept lists
+    BH_line = _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks)
+
+    BH_mi = bounds(m_breaks[0], m_breaks[-1])
+
+    # A bit extreme, but should work
+    mfl = np.min([
+        BH_line(opt.fminbound(BH_line, *m_breaks[i:i + 2]))
+        for i in range(len(exponents))
+    ])
+    mfu = np.min([
+        BH_line(opt.fminbound(lambda mi: -BH_line(mi), *m_breaks[i:i + 2]))
+        for i in range(len(exponents))
+    ])
+
+    BH_mf = bounds(mfl, mfu)
+
+    return BH_line, BH_mi, BH_mf
+
+
 # --------------------------------------------------------------------------
 # Combined IFMR class for all remnant types
 # --------------------------------------------------------------------------
@@ -252,6 +303,9 @@ class IFMR:
 
             case 'power' | 'powerlaw' | 'pl':
                 BH_func, BH_mi, BH_mf, = _powerlaw_BH_predictor(**BH_kwargs)
+
+            case 'broken' | 'brokenpowerlaw' | 'bpl':
+                BH_func, BH_mi, BH_mf, = _brokenpl_BH_predictor(**BH_kwargs)
 
             case _:
                 raise ValueError(f"Invalid BH IFMR method: {BH_method}")

@@ -1426,6 +1426,7 @@ class InitialBHPopulation:
                 if t <= final_age and (m_rem := _ifmr.predict(mto)) > 0:
 
                     # Find bin based on lower bin edge (must be careful later)
+                    # TODO this could fail with some awkward IFMR prescriptions
                     irem = np.flatnonzero(massbins.bins.BH.lower <= m_rem)[-1]
 
                     # Fill in remnant derivatives
