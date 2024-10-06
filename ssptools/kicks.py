@@ -152,7 +152,7 @@ def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
     return Mr_BH, Nr_BH, natal_ejecta
 
 
-def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='sigmoid', **ret_kwargs):
+def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
     r'''Computes the effects of BH natal-kicks on the mass and number of BHs
 
     Determines the effects of BH natal-kicks, and distributes said kicks

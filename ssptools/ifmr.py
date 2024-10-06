@@ -28,7 +28,7 @@ def get_data(path):
 
 
 def _powerlaw_predictor(exponent, slope, scale, m_lower, m_upper):
-    '''slope * mi^exponent + scale'''
+    '''Simple power law function; `slope * m^exponent + scale`.'''
 
     # TODO should warn if func(mi) > mi, wouldn't make physical sense lol
 
@@ -58,7 +58,7 @@ def _powerlaw_predictor(exponent, slope, scale, m_lower, m_upper):
 
 
 def _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks):
-    # borken power laws of N componenets, not normalized to be smooth
+    '''Broken power law with N components, not guaranteed to be smooth.'''
 
     def lines(mi):
         bounds = [(lw_bnd <= mi) & (mi <= up_bnd)
@@ -90,8 +90,7 @@ def _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks):
 
 
 def _MIST18_WD_predictor(FeH):
-    '''Return func(mi), WD_mi, WD_mf based on MIST 2018 interpolations
-    '''
+    '''Return WD IFMR function, based on interpolated MIST 2018 models.'''
 
     wdgrid = np.loadtxt(get_data("sevtables/wdifmr.dat"))
 
@@ -144,7 +143,7 @@ def _MIST18_WD_predictor(FeH):
 
 
 def _linear_WD_predictor(slope=0.15, scale=0.5, m_upper=5.5):
-    '''Just a simple line. m_upper is (soft) maximum initial mass'''
+    '''Return simple linear WD IFMR function.'''
 
     WD_line = _powerlaw_predictor(1, slope, scale, m_lower=0.0, m_upper=m_upper)
 
@@ -161,7 +160,7 @@ def _linear_WD_predictor(slope=0.15, scale=0.5, m_upper=5.5):
 
 
 def _check_F12_BH_FeH_bounds(FeH):
-    '''Sometimes this is needed elsewhere (e.g. kicks) so make separate func'''
+    # Sometimes this is needed elsewhere (e.g. kicks) so make separate func
 
     bhgrid = np.array([float(fn.stem.split('FEH')[-1])
                        for fn in get_data('sse').glob('MP*dat')])
@@ -182,6 +181,7 @@ def _check_F12_BH_FeH_bounds(FeH):
 
 
 def _F12_BH_predictor(FeH):
+    '''Return BH IFMR function, based on Fryer+2012 rapid-SNe prescription.'''
 
     # ----------------------------------------------------------------------
     # Check [Fe/H] is within model grid and adjust otherwise
@@ -210,7 +210,7 @@ def _F12_BH_predictor(FeH):
 
 
 def _linear_BH_predictor(slope=0.4, scale=0.7, m_lower=19):
-    '''Just a simple line. m_lower is minimum initial mass'''
+    '''Return simple linear BH IFMR function.'''
 
     BH_line = _powerlaw_predictor(1, slope, scale,
                                   m_lower=m_lower, m_upper=np.inf)
@@ -223,6 +223,7 @@ def _linear_BH_predictor(slope=0.4, scale=0.7, m_lower=19):
 
 
 def _powerlaw_BH_predictor(exponent=3, slope=3e-5, scale=14, m_lower=19):
+    '''Return simple single power law BH IFMR function.'''
 
     BH_line = _powerlaw_predictor(exponent, slope, scale,
                                   m_lower=m_lower, m_upper=np.inf)
@@ -236,6 +237,8 @@ def _powerlaw_BH_predictor(exponent=3, slope=3e-5, scale=14, m_lower=19):
 
 def _brokenpl_BH_predictor(exponents=[1, 3, 1], slopes=[1, 6e-4, 0.43],
                            scales=[0, 0, 0], m_breaks=[20, 22, 36, 100]):
+    '''Return N-component power law BH IFMR function.'''
+
     import scipy.optimize as opt
 
     # todo probably wont accept lists
@@ -264,16 +267,81 @@ def _brokenpl_BH_predictor(exponents=[1, 3, 1], slopes=[1, 6e-4, 0.43],
 
 
 class IFMR:
-    '''
-    Provides a class for the initial-final mass of all stellar remnants.
-    These are based on MIST and SSE models at different metallicities.
+    '''Initial-final mass relations for stellar remnants.
 
+    Provides methods for determining the final (individual) remnant mass and
+    type for a given initial stellar mass, based on a number of available
+    algorithms and prescriptions.
+
+    Parameters
+    ----------
+    FeH : float
+        Metallicity. Note that most methods which require a metallicity will be
+        based on a grid which this metallicity will be interpolated onto.
+        Values far outside the edge of these grids may behave unexpectedly.
+
+    NS_mass : float, optional
+        The (constant) final mass to be used for all neutron stars. Defaults
+        to the typically used value of 1.4 Msun.
+
+    WD_method : {"mist18", "linear"}, optional
+        The White Dwarf IFMR algorithm to use. Defaults to the MIST 2018 method.
+
+    WD_kwargs : dict, optional
+        All arguments passed to the WD IFMR algorithm. See the specified
+        functions for information on all required methods.
+        This will fail if the required arguments are not passed here.
+
+    BH_method : {"fryer12", "linear", "powerlaw", "brokenpowerlaw"}, optional
+        The Black Hole IFMR algorithm to use. Defaults to the Rapid supernovae
+        schema presented by Fryer+2012.
+
+    BH_kwargs : dict, optional
+        All arguments passed to the BH IFMR algorithm. See the specified
+        functions for information on all required methods.
+        This will fail if the required arguments are not passed here.
+
+    Attributes
+    ----------
+    BH_mi : bounds
+        The mass bounds defining the lower and upper bounds of stars which
+        will form black holes.
+
+    WD_mi : bounds
+        The mass bounds defining the lower and upper bounds of stars which
+        will form white dwarfs.
+
+    WD_mi : bounds
+        The mass bounds defining the lower and upper bounds of stars which
+        will form neutron stars. This is defined as the space between the WD
+        and BH bounds.
+
+    BH_mf : bounds
+        The mass bounds defining the possible (final) masses of black holes.
+        Note that this is *not* necessarily the same as `IFMR.predict(BH_mi)`.
+
+    WD_mf : bounds
+        The mass bounds defining the possible (final) masses of White dwarfs.
+        Note that this is *not* necessarily the same as `IFMR.predict(WD_mi)`.
+
+    NS_mf : bounds
+        The mass bounds defining the possible (final) masses of neutron stars.
+        This is, by definition, simply (NS_mass, NS_mass).
 
     mBH_min : float
-        Alias to BH_mf[0], for backwards compatibility
+        Alias to BH_mf.lower, for backwards compatibility.
 
     mWD_max : float
-        Alias to WD_mf[1], for backwards compatibility
+        Alias to WD_mf.upper, for backwards compatibility.
+
+    See Also
+    --------
+    _MIST18_WD_predictor : WD IFMR algorithm based on MIST 2018 models.
+    _linear_WD_predictor : Linear WD IFMR algorithm.
+    _F12_BH_predictor : BH IFMR algorithm based on Fryer+2012 prescription.
+    _linear_BH_predictor : Linear BH IFMR algorithm.
+    _powerlaw_BH_predictor : Single power law BH IFMR algorithm.
+    _brokenpl_BH_predictor : Multiple power law BH IFMR algorithm.
     '''
 
     def __repr__(self):
@@ -361,7 +429,7 @@ class IFMR:
         return rem_type.tolist()
 
     def predict(self, m_in):
-        '''Predict the final mass given the initial mass(es) `m_in`'''
+        '''Predict the final mass given the initial mass(es) `m_in`.'''
 
         final = np.where(
             m_in >= self.BH_mi[0], self._BH_spline(m_in),
