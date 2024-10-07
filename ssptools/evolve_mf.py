@@ -681,30 +681,26 @@ class EvolvedMF:
             BH mass bin, after dynamical ejections
         '''
 
+        Mtot_0 = Mr_BH.sum()  # for error message
+
         # calculate total mass we want to eject
         if M_eject is None:
-            M_eject = Mr_BH.sum() * (1.0 - self.BH_ret_dyn)
+            M_eject = Mtot_0 * (1.0 - self.BH_ret_dyn)
+
+        M_eject_0 = M_eject  # for error message
 
         # Remove BH starting from Heavy to Light
         j = Mr_BH.size
 
-        while M_eject != 0:
+        while M_eject >= 0:
             j -= 1
 
             if j < 0:
-                mssg = 'Invalid `M_eject`, must be less than total Mr_BH'
+                mssg = (f'Invalid `{M_eject_0=}`, '
+                        f'must be less than total Mr_BH ({Mtot_0})')
                 raise ValueError(mssg)
 
             mr_BH_j = Mr_BH[j] / Nr_BH[j]
-
-            # This will never get ejected below so just move on for now
-            # TODO this is indicative of problems with Nmin, why does it exist?
-            if M_eject / mr_BH_j < self.Nmin:
-                break
-
-            # Skip empty bins
-            if Nr_BH[j] < self.Nmin:
-                continue
 
             # Removed entirety of this bin
             if Mr_BH[j] < M_eject:
@@ -801,22 +797,32 @@ class EvolvedMF:
 
                     # calculate total mass we want to eject
                     M_eject = Mr.BH.sum() * (1.0 - self.BH_ret_dyn)
+                    M_ret = Mr.BH.sum() - M_eject
 
-                    # First remove mass from all bins by natal kicks, if desired
-                    if self.natal_kicks:
-                        *_, kicked = kicks.natal_kicks(Mr.BH, Nr.BH,
-                                                       **self._kick_kw)
-                        M_eject -= kicked
+                    # If kicking basically all, skip ahead
+                    if 0. <= M_ret / (Mr.BH[0] / Nr.BH[0]) < self.Nmin:
+                        Mr.BH[:] = 0
+                        Nr.BH[:] = 0
 
-                    if M_eject < 0:
-                        mssg = (f"Natal kicks already removed {-M_eject} Msun "
+                    else:
+
+                        # First remove mass from all bins by natal kicks
+                        if self.natal_kicks:
+                            *_, kicked = kicks.natal_kicks(Mr.BH, Nr.BH,
+                                                           **self._kick_kw)
+                            M_eject -= kicked
+
+                        if M_eject < 0:
+                            mssg = (
+                                f"Natal kicks already removed {-M_eject} Msun "
                                 "more than total ejections desired by "
                                 f"'BH_ret_dyn={self.BH_ret_dyn}'. "
-                                "Increase BH_ret_dyn or alter natal kicks.")
-                        raise ValueError(mssg)
+                                "Increase BH_ret_dyn or alter natal kicks."
+                            )
+                            raise ValueError(mssg)
 
-                    # Remove dynamical BH ejections
-                    self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
+                        # Remove dynamical BH ejections
+                        self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
 
                 # ----------------------------------------------------------
                 # save values into output arrays
@@ -1049,11 +1055,6 @@ class EvolvedMFWithBH(EvolvedMF):
 
         while (fBH_target < (fBH_current := MBH / Mtot)) and (j >= 0):
             j -= 1
-
-            # Skip empty bins
-            # TODO if Mrem < Nmin * mj, this func will fail (see other version)
-            if Nr_BH[j] < self.Nmin:
-                continue
 
             # Removed entirety of this bin
             if ((MBH - Mr_BH[j]) / (Mtot - Mr_BH[j])) >= fBH_target:
