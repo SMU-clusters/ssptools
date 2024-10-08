@@ -473,7 +473,12 @@ class MassBins:
             WD_bl, WD_bu = ifmr.WD_mf
             WD_bl = m_break[0] if WD_bl < m_break[0] else WD_bl
 
-            bin_sides = binfunc(WD_bl, WD_bu, nbin_WD)
+            if WD_bu <= WD_bl:
+                mssg = (f"WD upper bound ({WD_bu}) cannot be lower than "
+                        f"lower bound ({WD_bl})")
+                raise ValueError(mssg)
+
+            bin_sides = binfunc(WD_bl, WD_bu, nbin_WD + 1)
             bins_WD = mbin(bin_sides[:-1], bin_sides[1:])
 
             # Black Holes
@@ -483,7 +488,12 @@ class MassBins:
             BH_bl, BH_bu = ifmr.BH_mf
             BH_bu = m_break[-1] if BH_bu > m_break[-1] else BH_bu
 
-            bin_sides = binfunc(BH_bl, BH_bu, nbin_BH)
+            if BH_bl >= BH_bu:
+                mssg = (f"BH lower bound ({BH_bl}) cannot be higher than "
+                        f"upper bound ({BH_bu})")
+                raise ValueError(mssg)
+
+            bin_sides = binfunc(BH_bl, BH_bu, nbin_BH + 1)
             bins_BH = mbin(bin_sides[:-1], bin_sides[1:])
 
             # Neutron Stars
