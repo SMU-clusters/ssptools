@@ -3,6 +3,7 @@
 
 import pathlib
 import logging
+import functools
 import collections
 
 import numpy as np
@@ -27,13 +28,14 @@ def get_data(path):
 # --------------------------------------------------------------------------
 
 
+def _line(mi, exponent, slope, scale):
+    return (slope * mi**exponent) + scale
+
+
 def _powerlaw_predictor(exponent, slope, scale, m_lower, m_upper):
     '''Simple power law function; `slope * m^exponent + scale`.'''
 
     # TODO should warn if func(mi) > mi, wouldn't make physical sense lol
-
-    def line(mi):
-        return (slope * mi**exponent) + scale
 
     if (slope == 0.0) and (scale == 0.0):
         mssg = (f"Invalid line parameter (m={slope}, b={scale}, k={exponent}); "
@@ -54,19 +56,20 @@ def _powerlaw_predictor(exponent, slope, scale, m_lower, m_upper):
                 f"function cannot have roots between {m_lower=} and {m_upper=}")
         raise ValueError(mssg)
 
-    return line
+    return functools.partial(_line, exponent=exponent, slope=slope, scale=scale)
+
+
+def _lines(mi, slopes, scales, exponents, m_breaks):
+    bounds = [(lw_bnd <= mi) & (mi <= up_bnd)
+              for lw_bnd, up_bnd in zip(m_breaks[:-1], m_breaks[1:])]
+
+    vals = (slopes * mi[..., np.newaxis]**exponents + scales).T
+
+    return np.select(bounds, vals, default=np.nan)  # nan?
 
 
 def _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks):
     '''Broken power law with N components, not guaranteed to be smooth.'''
-
-    def lines(mi):
-        bounds = [(lw_bnd <= mi) & (mi <= up_bnd)
-                  for lw_bnd, up_bnd in zip(m_breaks[:-1], m_breaks[1:])]
-
-        vals = (slopes * mi[..., np.newaxis]**exponents + scales).T
-
-        return np.select(bounds, vals, default=np.nan)  # nan?
 
     # Coerce all inputs to arrays, just in case
     exponents = np.asanyarray(exponents)
@@ -81,7 +84,8 @@ def _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks):
             m_lower=m_breaks[i], m_upper=m_breaks[i + 1]
         )
 
-    return lines
+    return functools.partial(_lines, slopes=slopes, scales=scales,
+                             exponents=exponents, m_breaks=m_breaks)
 
 
 # --------------------------------------------------------------------------
