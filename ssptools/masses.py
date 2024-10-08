@@ -53,6 +53,9 @@ def Pk(a, k, m1, m2):
     if (casemask := np.asarray(-a == k)).any():
         res[casemask] = np.log(m2 / m1)[casemask]
 
+    # floating point check for *very* thin bins (m_lower~m_upper)
+    res[res < np.finfo(float).resolution] = np.nan
+
     return res
 
 
@@ -414,6 +417,7 @@ class MassBins:
 
         # Single number divided equally between break masses
         if isinstance(nbin_MS, int):
+            # TODO breaks if nbins is dict
             self._nbin_MS_each = _divide_bin_sizes(nbins, N_MS_breaks)
 
         # List of bins between each break mass

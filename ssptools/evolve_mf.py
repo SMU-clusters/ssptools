@@ -552,7 +552,7 @@ class EvolvedMF:
         P2 = Pk(alpha, 2, *bins_MS)
 
         # floating point check for *very* thin bins (i.e. when mto ~ bin edge)
-        finite_mask = P1 > np.finfo(float).resolution
+        finite_mask = ~np.isnan(P1)
 
         md = self.md
         ms = P2 / P1
@@ -700,8 +700,6 @@ class EvolvedMF:
                         f'must be less than total Mr_BH ({Mtot_0})')
                 raise ValueError(mssg)
 
-            mr_BH_j = Mr_BH[j] / Nr_BH[j]
-
             # Removed entirety of this bin
             if Mr_BH[j] < M_eject:
                 M_eject -= Mr_BH[j]
@@ -711,6 +709,8 @@ class EvolvedMF:
 
             # Remove required fraction of the last affected bin
             else:
+
+                mr_BH_j = Mr_BH[j] / Nr_BH[j]
 
                 Mr_BH[j] -= M_eject
                 Nr_BH[j] -= M_eject / (mr_BH_j)
