@@ -16,6 +16,7 @@ DEFAULT_IMF = masses.PowerLawIMF(
     m_break=DEFAULT_M_BREAK, a=[-0.5, -1.3, -2.5], N0=5e5
 )
 
+# TODO need a test for when multiple tout, as that can be unstable.
 DEFAULT_KWARGS = dict(
     IMF=DEFAULT_IMF, nbins=[5, 5, 20], FeH=-1.00, tout=[12_000], esc_rate=0.,
     N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,

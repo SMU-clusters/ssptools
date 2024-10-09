@@ -25,8 +25,6 @@ class EvolvedMF:
 
     # TODO add more in-depth explanation or references to actual algorithm here
 
-    Warning: Currently only supports N=3 IMF components.
-
     Parameters
     ----------
     IMF : PowerLawIMF
@@ -90,7 +88,8 @@ class EvolvedMF:
         Depletion mass, below which stars are preferentially disrupted during
         the stellar escape derivatives.
         The default 1.2 is based on Lamers et al. (2013) and shouldn't be
-        changed unless you know what you're doing.
+        changed unless you know what you're doing. Making this too large will
+        break assumptions made internally about BH dynamics.
 
     esc_norm : {'N', 'M'}, optional
         Defines whether the given `esc_rate` is to be given in stars or mass
@@ -111,7 +110,6 @@ class EvolvedMF:
 
     Attributes
     ----------
-
     nbin : int
         Total number of bins (sum of nbins parameter).
 
@@ -175,6 +173,17 @@ class EvolvedMF:
         Array of 2-character strings representing the object type of the
         corresponding bins of the M, N and m properties. "MS" = main sequence
         stars, "WD" = white dwarfs, "NS" = neutron stars, "BH" = black holes.
+
+    Notes
+    -----
+        The BH kicks and ejections are computed post facto on the BH mass
+        bins for each requested output age (`tout`). As such, parameters such
+        as `BH_ret_dyn` are applied equally at each age, and not accounted
+        for during the evolution, which may not be entirely realistic.
+        Care should be taken when examining the BHs at multiple ages.
+
+        If there is an evolution over time of `f_BH` you wish to match, see
+        `EvolvedMFWithBH` instead.
     '''
 
     @property
@@ -776,7 +785,7 @@ class EvolvedMF:
                 # ----------------------------------------------------------
 
                 Ns, alpha, Nr, Mr = self.massbins.unpack_values(
-                    sol.y, grouped_rem=True
+                    sol.y.copy(), grouped_rem=True
                 )
 
                 bins_MS = self.massbins.turned_off_bins(self.compute_mto(ti))
@@ -1139,7 +1148,7 @@ class EvolvedMFWithBH(EvolvedMF):
                 # ----------------------------------------------------------
 
                 Ns, alpha, Nr, Mr = self.massbins.unpack_values(
-                    sol.y, grouped_rem=True
+                    sol.y.copy(), grouped_rem=True
                 )
 
                 bins_MS = self.massbins.turned_off_bins(self.compute_mto(ti))
