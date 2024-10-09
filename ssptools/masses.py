@@ -17,7 +17,6 @@ star_classes = namedtuple('star_classes', ('MS',) + rem_classes._fields)
 # --------------------------------------------------------------------------
 
 
-@np.errstate(invalid='ignore')
 def Pk(a, k, m1, m2):
     r'''Convenience function for computing quantities related to IMF
 
@@ -48,7 +47,10 @@ def Pk(a, k, m1, m2):
     '''
 
     a = np.asarray(a, dtype=float)
-    res = np.asarray((m2 ** (a + k) - m1 ** (a + k)) / (a + k))  # a != k
+
+    with np.errstate(invalid='ignore'):  # catch when a == k and warnings fly
+
+        res = np.asarray((m2 ** (a + k) - m1 ** (a + k)) / (a + k))  # a != k
 
     if (casemask := np.asarray(-a == k)).any():
         res[casemask] = np.log(m2 / m1)[casemask]
