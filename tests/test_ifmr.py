@@ -37,12 +37,12 @@ class TestPredictors:
     # Base predictors
     # ----------------------------------------------------------------------
 
-    @pytest.mark.parametrize('exponent', [-2.0, 1.0, 2.0])
-    @pytest.mark.parametrize('slope', [0.5, 2, 10])
-    @pytest.mark.parametrize('scale', [0, 5, 10])
+    @pytest.mark.parametrize('exponent', [-0.5, 1.0, 2.0])
+    @pytest.mark.parametrize('slope', [0.01, 0.05, 0.1])
+    @pytest.mark.parametrize('scale', [0, 0.5, 0.9])
     def test_powerlaw_predictor(self, exponent, slope, scale):
 
-        m_low, m_up = 1.0, 10.
+        m_low, m_up = 1.0, 8.
 
         mi = np.linspace(m_low, m_up)
 
@@ -59,15 +59,16 @@ class TestPredictors:
             (1, 1, 1., 5, 2),  # Invalid bounds
             (1, -1, 5, 1, 10),  # root between bounds
             (2, -1, 10, 1, 10),  # root between bounds
+            (2, 0.5, 0.0, 20, 100),  # goes above 1-1 line
         ]
     )
     def test_powerlaw_invalids(self, exponent, slope, scale, m_low, m_up):
         with pytest.raises(ValueError):
             ifmr._powerlaw_predictor(exponent, slope, scale, m_low, m_up)
 
-    @pytest.mark.parametrize('exponents', [[-2.0, 1.0], [3.0, 2.0]])
-    @pytest.mark.parametrize('slopes', [[0.5, 2.], [2., 10.]])
-    @pytest.mark.parametrize('scales', [[0., 5.0], [5.0, 10.0]])
+    @pytest.mark.parametrize('exponents', [[-0.5, 1.0], [2.5, 2.0]])
+    @pytest.mark.parametrize('slopes', [[0.01, 0.05], [0.05, 0.01]])
+    @pytest.mark.parametrize('scales', [[0., 0.5], [0.5, 0.9]])
     def test_broken_powerlaw_predictor(self, exponents, slopes, scales):
 
         mb = [1.0, 5.0, 10.]
@@ -110,13 +111,13 @@ class TestPredictors:
 
     @pytest.mark.parametrize(
         'FeH, expected',
-        zip(metals, [[ 5.498, 15.6225, 19.069, 29.8365, 49.942],
-                     [ 5.498, 15.6225, 19.069, 29.8365, 49.942],
-                     [ 4.813, 15.9855, 19.078, 29.966, 45.441],
-                     [ 7.266, 12.2005, 17.896, 28.841, 40.681],
-                     [ 10.589,  9.8829, 15.54, 24.5635, 34.873],
-                     [ 8.585, 12.98655, 28.132, 31.017, 33.916],
-                     [ 8.585, 12.98655, 28.132, 31.017, 33.916]])
+        zip(metals, [[5.498, 15.6225, 19.069, 29.8365, 49.942],
+                     [5.498, 15.6225, 19.069, 29.8365, 49.942],
+                     [4.813, 15.9855, 19.078, 29.966, 45.441],
+                     [7.266, 12.2005, 17.896, 28.841, 40.681],
+                     [10.589, 9.8829, 15.54, 24.5635, 34.873],
+                     [8.585, 12.98655, 28.132, 31.017, 33.916],
+                     [8.585, 12.98655, 28.132, 31.017, 33.916]])
     )
     def test_F12_BH_predictor(self, FeH, expected):
 
@@ -126,9 +127,9 @@ class TestPredictors:
 
         assert pred(mi) == pytest.approx(expected)
 
-    @pytest.mark.parametrize('exponent', [-2.0, 1.0, 2.0])
-    @pytest.mark.parametrize('slope', [0.5, 2, 10])
-    @pytest.mark.parametrize('scale', [0, 5, 10])
+    @pytest.mark.parametrize('exponent', [.1, 1.0, 2.0])
+    @pytest.mark.parametrize('slope', [0.01, 0.05, 0.1])
+    @pytest.mark.parametrize('scale', [0, 0.5, 0.9])
     def test_powerlaw_BH_predictor(self, exponent, slope, scale):
 
         m_low, m_up = 1.0, 10.
@@ -141,9 +142,9 @@ class TestPredictors:
 
         assert pred(mi) == pytest.approx(expected)
 
-    @pytest.mark.parametrize('exponents', [[-2.0, 1.0], [3.0, 2.0]])
-    @pytest.mark.parametrize('slopes', [[0.5, 2.], [2., 10.]])
-    @pytest.mark.parametrize('scales', [[0., 5.0], [5.0, 10.0]])
+    @pytest.mark.parametrize('exponents', [[-0.5, 1.0], [2.5, 2.0]])
+    @pytest.mark.parametrize('slopes', [[0.01, 0.05], [0.05, 0.01]])
+    @pytest.mark.parametrize('scales', [[0., 0.5], [0.5, 0.9]])
     def test_brokenpl_BH_predictor(self, exponents, slopes, scales):
 
         mb = [1.0, 5.0, 10.]
@@ -208,17 +209,17 @@ class TestBounds:
     # Power law BHs
     # ----------------------------------------------------------------------
 
-    @pytest.mark.parametrize('exponent', [-2.0, 1.0, 2.0])
-    @pytest.mark.parametrize('slope', [0.5, 2, 10])
-    @pytest.mark.parametrize('scale', [0, 5, 10])
-    @pytest.mark.parametrize('ml', [0.1, 5, 10])
+    @pytest.mark.parametrize('exponent', [.1, 1.0, 1.5])
+    @pytest.mark.parametrize('slope', [0.01, 0.05, 0.1])
+    @pytest.mark.parametrize('scale', [0, 0.5, 0.9])
+    @pytest.mark.parametrize('ml', [1, 5, 15])
     def test_powerlaw_BH_mi(self, exponent, slope, scale, ml):
         _, mi, _ = ifmr._powerlaw_BH_predictor(exponent, slope, scale, ml)
         assert mi == pytest.approx((ml, np.inf))
 
-    @pytest.mark.parametrize('exponent', [-2.0, 1.0, 2.0])
-    @pytest.mark.parametrize('slope', [0.5, 2, 10])
-    @pytest.mark.parametrize('scale', [0, 5, 10])
+    @pytest.mark.parametrize('exponent', [.1, 1.0, 1.5])
+    @pytest.mark.parametrize('slope', [0.01, 0.05, 0.1])
+    @pytest.mark.parametrize('scale', [0, 0.5, 0.9])
     def test_powerlaw_BH_mf(self, exponent, slope, scale):
 
         ml = 1.0
@@ -232,9 +233,9 @@ class TestBounds:
     @pytest.mark.parametrize(
         'exponents, slopes, scales, mb',
         [
-            ([1., 1.], [0., 1.], [1., 0.], [1., 5., 10.]),
-            ([1., 2.], [1., 1.], [1., 1.], [2., 3., 100.]),
-            ([1., 2], [1., -0.5], [1., 51.], [10., 20., 30.])
+            ([1., 1.], [0.5, .01], [0.1, 0.], [2.1, 5., 10.]),
+            ([1., -1.5], [.01, .01], [0.1, 0.1], [2.5, 3., 100.]),
+            ([1., -1.5], [.01, -0.5], [0.1, 1.], [10., 20., 30.])
         ]
     )
     def test_brokenpl_BH_mi(self, exponents, slopes, scales, mb):
@@ -247,8 +248,8 @@ class TestBounds:
         'exponents, slopes, scales, expected_mf',
         [
             ([1., 1.], [0., 1.], [1., 0.], (1., 10.)),
-            ([1., 2.], [1., 1.], [1., 1.], (2., 101.)),
-            ([1., 2], [1., -0.5], [1., 51.], (1., 38.5))
+            ([1., 1.1], [1., .7], [0., 0.], (1., 8.812)),
+            ([1., -1.5], [.01, -0.5], [0.1, 1.], (0.11, 0.9842))
         ]
     )
     def test_brokenpl_BH_mf(self, exponents, slopes, scales, expected_mf):

@@ -35,11 +35,10 @@ def _line(mi, exponent, slope, scale):
 def _powerlaw_predictor(exponent, slope, scale, m_lower, m_upper):
     '''Simple power law function; `slope * m^exponent + scale`.'''
 
-    # TODO should warn if func(mi) > mi, wouldn't make physical sense lol
-
-    if (slope == 0.0) and (scale == 0.0):
+    if not ((0 < _line(m_lower, exponent, slope, scale) <= m_lower)
+            and (0 < _line(m_upper, exponent, slope, scale) <= m_upper)):
         mssg = (f"Invalid line parameter (m={slope}, b={scale}, k={exponent}); "
-                "cannot be zero at all times")
+                "Must be bounded within mf∈(0,mi] for m_lower < mi < m_upper.")
         raise ValueError(mssg)
 
     elif m_lower < 0.0:
@@ -48,13 +47,6 @@ def _powerlaw_predictor(exponent, slope, scale, m_lower, m_upper):
     elif m_lower > m_upper:
         raise ValueError(f"Invalid line parameter; "
                          f"{m_lower=} cannot be greater than {m_upper=}")
-
-    elif ((scale / slope < 0.0)
-            and (m_lower < (-scale / slope)**(1 / exponent) <= m_upper)):
-
-        mssg = (f"Invalid line parameter (m={slope}, b={scale}, k={exponent}); "
-                f"function cannot have roots between {m_lower=} and {m_upper=}")
-        raise ValueError(mssg)
 
     return functools.partial(_line, exponent=exponent, slope=slope, scale=scale)
 
@@ -184,6 +176,7 @@ def _check_F12_BH_FeH_bounds(FeH):
         return FeH
 
 
+# TODO should allow others like F12-delayed, B08/startrack
 def _F12_BH_predictor(FeH):
     '''Return BH IFMR function, based on Fryer+2012 rapid-SNe prescription.'''
 
@@ -418,6 +411,12 @@ class IFMR:
 
         self.NS_mi = bounds(self.WD_mi[1], self.BH_mi[0])
         self.NS_mf = bounds(self._NS_mass, self._NS_mass)
+
+        if self.WD_mi.upper > self.BH_mi.lower:
+            mssg = (f"Invalid initial mass bounds, "
+                    f"WD upper bound ({self.WD_mi.upper}) cannot be higher "
+                    f"than BH lower bound ({self.BH_mi.lower})")
+            raise ValueError(mssg)
 
     def predict_type(self, m_in):
         '''Predict the remnant type (WD, NS, BH) given the initial mass(es)'''
