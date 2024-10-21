@@ -238,20 +238,22 @@ def _brokenpl_BH_predictor(exponents=[1, 3, 1], slopes=[1, 6e-4, 0.43],
 
     import scipy.optimize as opt
 
-    # todo probably wont accept lists
+    # TODO wont accept lists, need to coerce in _lines
     BH_line = _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks)
 
     BH_mi = bounds(m_breaks[0], m_breaks[-1])
 
-    # A bit extreme, but should work
-    mfl = np.min([
-        BH_line(opt.fminbound(BH_line, *m_breaks[i:i + 2]))
-        for i in range(len(exponents))
-    ])
-    mfu = np.max([
-        BH_line(opt.fminbound(lambda mi: -BH_line(mi), *m_breaks[i:i + 2]))
-        for i in range(len(exponents))
-    ])
+    # Manually check the bound masses for each line, to find max/min values
+    # This is necessary because the discontinuity at m_break ruins minimizers
+    mfl, mfu = np.inf, 0.
+    for i in range(len(exponents)):
+        vl, vr = _powerlaw_predictor(
+            exponent=exponents[i], slope=slopes[i], scale=scales[i],
+            m_lower=m_breaks[i], m_upper=m_breaks[i + 1]
+        )(np.asanyarray(m_breaks[i:i + 2]))
+
+        mfl = min(mfl, vl, vr)
+        mfu = max(mfu, vl, vr)
 
     BH_mf = bounds(mfl, mfu)
 

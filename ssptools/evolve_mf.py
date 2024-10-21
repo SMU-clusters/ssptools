@@ -1448,9 +1448,14 @@ class InitialBHPopulation:
                 # Skip 0-mass remnants
                 if t <= final_age and (m_rem := _ifmr.predict(mto)) > 0:
 
+                    # If this happens its because IFMR is (numerically) broken!
+                    if (cls_rem := _ifmr.predict_type(mto)) != 'BH':
+                        mssg = f"Initial mass {mto} made a {cls_rem}, not a BH."
+                        raise RuntimeError(mssg)
+
                     # Find bin based on lower bin edge (must be careful later)
-                    # TODO this could fail with some awkward IFMR prescriptions
-                    irem = np.flatnonzero(massbins.bins.BH.lower <= m_rem)[-1]
+
+                    irem = massbins.determine_index(m_rem, cls_rem)
 
                     # Fill in remnant derivatives
                     dNr[irem] = -dNdt * frem
