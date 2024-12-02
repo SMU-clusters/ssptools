@@ -265,7 +265,7 @@ def _COSMIC_full_BH_predictor(FeH, remnantflag=3, windflag=3, eddlimflag=0,
 
     Z = zsun * 10**FeH
 
-    mi_grid = np.arange(15, 150.1, 0.1)
+    mi_grid = np.arange(15, 250.1, 0.1)
     n = mi_grid.size
     t_final = 13700  # [Myr]
 
