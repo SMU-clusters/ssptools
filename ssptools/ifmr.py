@@ -177,7 +177,7 @@ def _linear_WD_predictor(slope=0.15, scale=0.5, m_upper=5.5):
 # --------------------------------------------------------------------------
 
 
-def _check_IFMR_FeH_bounds(FeH, loc='sse'):
+def _check_IFMR_FeH_bounds(FeH, loc='ifmr/uSSE_rapid'):
     # Sometimes this is needed elsewhere (e.g. kicks) so make separate func
 
     bhgrid = np.array([float(fn.stem.split('FEH')[-1])

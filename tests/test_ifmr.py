@@ -6,14 +6,14 @@ import numpy as np
 from ssptools import ifmr
 
 
-metals = [-3.00, -2.50, -2.00, -1.00, -0.50, 0.50, 1.00]
+metals = [-3.00, -2.50, -2.00, -1.00, -0.50, 0.40, 1.00]
 
 
 class TestMetallicity:
     '''Tests about IFMR metallicity and bound checks'''
 
     WD_metals = [-2.00, -2.00, -2.00, -1.00, -0.50, -0.50, -0.50]
-    BH_metals = [-2.50, -2.50, -2.00, -1.00, -0.50, 0.50, 0.50]
+    BH_metals = [-2.50, -2.50, -2.00, -1.00, -0.50, 0.40, 0.40]
 
     @pytest.mark.parametrize('FeH', metals)
     def test_stored_FeH(self, FeH):
