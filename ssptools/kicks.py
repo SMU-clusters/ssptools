@@ -204,7 +204,7 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
 
     method : {'sigmoid', 'maxwellian'}, optional
         Natal kick algorithm to use, defining the retention fraction as a
-        function of mean bin mass. Defaults to the Sigmoid method.
+        function of mean bin mass. Defaults to the Maxwellian method.
 
     **ret_kwargs : dict, optional
         All other arguments are passed to the retention fraction function.

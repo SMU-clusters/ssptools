@@ -199,7 +199,7 @@ def _check_IFMR_FeH_bounds(FeH, loc='ifmr/uSSE_rapid'):
 
 
 def _Ba20_r_BH_predictor(FeH):
-    '''Return BH IFMR function, based on Fryer+2012 rapid-SNe prescription.'''
+    '''Return BH IFMR function based on Banerjee+2020 rapid-SNe prescription.'''
 
     # ----------------------------------------------------------------------
     # Check [Fe/H] is within model grid and adjust otherwise
@@ -228,7 +228,7 @@ def _Ba20_r_BH_predictor(FeH):
 
 
 def _Ba20_d_BH_predictor(FeH):
-    '''Return BH IFMR function, based on Fryer+2012 delayed-SNe prescription.'''
+    '''Return BH IFMR function based on Banerjee+2020 delay-SNe prescription.'''
 
     # ----------------------------------------------------------------------
     # Check [Fe/H] is within model grid and adjust otherwise
@@ -257,7 +257,13 @@ def _Ba20_d_BH_predictor(FeH):
 
 
 def _COSMIC_full_BH_predictor(FeH, remnantflag=3, windflag=3, eddlimflag=0,
-                              pisn=45., zsun=0.02, **bse_kwargs):
+                              pisn=45., zsun=0.02, *, Ncpu=-1, max_mi=250.1,
+                              **bse_kwargs):
+    '''Return BH IFMR function computed by running COSMIC with the given model
+    parameters. See COSMIC docs for information on all parameters. Note that if
+    you change `zsun`, the grid of fallback values used in natal kicks will not
+    match the metallicities here.'''
+
     from multiprocessing import cpu_count
 
     from cosmic.evolve import Evolve
@@ -265,9 +271,11 @@ def _COSMIC_full_BH_predictor(FeH, remnantflag=3, windflag=3, eddlimflag=0,
 
     Z = zsun * 10**FeH
 
-    mi_grid = np.arange(15, 250.1, 0.1)
+    mi_grid = np.arange(15, max_mi, 0.1)
     n = mi_grid.size
     t_final = 13700  # [Myr]
+
+    Ncpu = Ncpu if Ncpu > 0 else cpu_count()
 
     init_table = InitialBinaryTable.InitialBinaries(
         m1=mi_grid, m2=np.zeros(n),
@@ -282,7 +290,7 @@ def _COSMIC_full_BH_predictor(FeH, remnantflag=3, windflag=3, eddlimflag=0,
     bsedict = _DEFAULT_BSEDICT | bse_kwargs | important_kwargs
 
     _, bcm, *_ = Evolve.evolve(initialbinarytable=init_table,
-                               BSEDict=bsedict, nproc=cpu_count())
+                               BSEDict=bsedict, nproc=Ncpu)
 
     bh_index = bcm[bcm['kstar_1'] == 14].index
     BH_mi = bcm[bcm.index.isin(bh_index)][::2]['mass_1'].values
@@ -298,6 +306,7 @@ def _COSMIC_full_BH_predictor(FeH, remnantflag=3, windflag=3, eddlimflag=0,
 
 
 def _COSMIC_r_BH_predictor(FeH):
+    '''Return BH IFMR function based on COSMIC, rapid-SNe prescription.'''
 
     # ----------------------------------------------------------------------
     # Check [Fe/H] is within model grid and adjust otherwise
@@ -326,6 +335,7 @@ def _COSMIC_r_BH_predictor(FeH):
 
 
 def _COSMIC_d_BH_predictor(FeH):
+    '''Return BH IFMR function based on COSMIC, rapid-SNe prescription.'''
 
     # ----------------------------------------------------------------------
     # Check [Fe/H] is within model grid and adjust otherwise
@@ -436,14 +446,18 @@ class IFMR:
         functions for information on all required methods.
         This will fail if the required arguments are not passed here.
 
-    BH_method : {"fryer12", "linear", "powerlaw", "brokenpowerlaw"}, optional
-        The Black Hole IFMR algorithm to use. Defaults to the Rapid supernovae
-        schema presented by Fryer+2012.
+    BH_method : {"banerjee20", "cosmic", "cosmic-rapid", "cosmic-delayed",
+                 "linear", "powerlaw", "brokenpowerlaw"}, optional
+        The Black Hole IFMR algorithm to use. Defaults to the updated-SSE
+        version decsribed by Banerjee et al. (2020) (using the rapid supernovae
+        schema presented by Fryer+2012). Other options include the COSMIC
+        library (Breivik et al. 2020) and various simple analytical
+        prescriptions.
 
     BH_kwargs : dict, optional
         All arguments passed to the BH IFMR algorithm. See the specified
         functions for information on all required methods.
-        This will fail if the required arguments are not passed here.
+        This will fail if any required arguments are not passed here.
 
     Attributes
     ----------
@@ -482,7 +496,11 @@ class IFMR:
     --------
     _MIST18_WD_predictor : WD IFMR algorithm based on MIST 2018 models.
     _linear_WD_predictor : Linear WD IFMR algorithm.
-    _F12_BH_predictor : BH IFMR algorithm based on Fryer+2012 prescription.
+    _Ba20_r_BH_predictor : BH IFMR algorithm based on Banerjee+2020 rapid SNe.
+    _Ba20_d_BH_predictor : BH IFMR algorithm based on Banerjee+2020 delayed SNe.
+    _COSMIC_r_BH_predictor : BH IFMR algorithm based on COSMIC rapid SNe.
+    _COSMIC_d_BH_predictor : BH IFMR algorithm based on COSMIC delayed SNe.
+    _COSMIC_full_BH_predictor : BH IFMR algorithm based on custom COSMIC params.
     _linear_BH_predictor : Linear BH IFMR algorithm.
     _powerlaw_BH_predictor : Single power law BH IFMR algorithm.
     _brokenpl_BH_predictor : Multiple power law BH IFMR algorithm.

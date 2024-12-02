@@ -75,9 +75,32 @@ class EvolvedMF:
         Whether to account for natal kicks in the BH dynamical retention.
         Defaults to False.
 
+    kick_method : {'maxwellian', 'sigmoid'}, optional
+        The BH natal kick algorithm to use, if `natal_kicks=True`.
+        See `kicks.natal_kicks` for more details.
+
     vesc : float, optional
         Initial cluster escape velocity, in km/s, for use in the computation of
         BH natal kick effects. Defaults to 90 km/s.
+
+    kick_vdisp : float, optional
+        The dispersion of the Maxwellian natal kick velocity distribution.
+        Only used if `kick_method='maxwellian'`.
+        See `kicks._maxwellian_retention_frac` for more information.
+
+    f_kick : float, optional
+        Unused.
+
+    kick_slope : float
+        The "slope" of the sigmoid retention function, defining the
+        "sharpness" of the increase. Only used if `kick_method='sigmoid'`.
+        See `kicks._sigmoid_retention_frac` for more information.
+
+    kick_scale : float
+        The scale-mass of the sigmoid retention function, defining the
+        approximate mass of the turn-over from 0 to 1.
+        Only used if `kick_method='sigmoid'`.
+        See `kicks._sigmoid_retention_frac` for more information.
 
     stellar_evolution : bool, optional
         Whether or not to include stellar evolution effects in the mass function
@@ -97,6 +120,22 @@ class EvolvedMF:
         Note that a constant :math:`\dot{N}` will give rise to an increasing
         :math:`\dot{M}` over time, and vice versa, so the two options are not
         directly interchangeable. Defaults to 'N'.
+
+    BH_IFMR_method : str, optional
+        The BH IFMR algorithm to use when determining BH masses.
+        See `ifmr` for more information.
+
+    WD_IFMR_method : str, optional
+        The WD IFMR algorithm to use when determining WD masses.
+        See `ifmr` for more information.
+
+    BH_IFMR_kwargs : dict, optional
+        All arguments passed to the BH IFMR algorithm. See the specified
+        functions in `ifmr` for information on all required methods.
+
+    WD_IFMR_kwargs : dict, optional
+        All arguments passed to the WD IFMR algorithm. See the specified
+        functions in `ifmr` for information on all required methods.
 
     binning_breaks : list of float, optional
         The binning break masses to use when constructing the mass bins,
@@ -1386,6 +1425,25 @@ class InitialBHPopulation:
         binning_method : {'default', 'split_log', 'split_linear'}, optional
             The spacing method to use when constructing the mass bins.
             See `masses.MassBins` for more information.
+
+        BH_IFMR_method : str, optional
+            The BH IFMR algorithm to use when determining BH masses.
+            See `ifmr` for more information.
+
+        WD_IFMR_method : str, optional
+            The WD IFMR algorithm to use when determining WD masses.
+            See `ifmr` for more information.
+
+        BH_IFMR_kwargs : dict, optional
+            All arguments passed to the BH IFMR algorithm. See the specified
+            functions in `ifmr` for information on all required methods.
+
+        WD_IFMR_kwargs : dict, optional
+            All arguments passed to the WD IFMR algorithm. See the specified
+            functions in `ifmr` for information on all required methods.
+
+        kwargs : dict, optional
+            All other arguments are passed to the `InitialBHPopulation`.
         '''
 
         def compute_tms(mi):
@@ -1584,6 +1642,10 @@ class InitialBHPopulation:
         binning_method : {'default', 'split_log', 'split_linear'}, optional
             The spacing method to use when constructing the mass bins.
             See `masses.MassBins` for more information.
+
+        kwargs : dict, optional
+            All other arguments are passed to the
+            `InitialBHPopulation.from_IMF` constructor.
         '''
 
         imf = PowerLawIMF(m_break=m_breaks, a=a_slopes, N0=N0, ext='zeros')
@@ -1635,6 +1697,25 @@ class InitialBHPopulation:
         binning_method : {'default', 'split_log', 'split_linear'}, optional
             The spacing method to use when constructing the mass bins.
             See `masses.MassBins` for more information.
+
+        BH_IFMR_method : str, optional
+            The BH IFMR algorithm to use when determining BH masses.
+            See `ifmr` for more information.
+
+        WD_IFMR_method : str, optional
+            The WD IFMR algorithm to use when determining WD masses.
+            See `ifmr` for more information.
+
+        BH_IFMR_kwargs : dict, optional
+            All arguments passed to the BH IFMR algorithm. See the specified
+            functions in `ifmr` for information on all required methods.
+
+        WD_IFMR_kwargs : dict, optional
+            All arguments passed to the WD IFMR algorithm. See the specified
+            functions in `ifmr` for information on all required methods.
+
+        kwargs : dict, optional
+            All other arguments are passed to the `InitialBHPopulation`.
         '''
 
         MF = PowerLawIMF(m_breaks, a_slopes, N0=N0)
