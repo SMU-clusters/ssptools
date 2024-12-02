@@ -11,7 +11,8 @@ import scipy.interpolate as interp
 __all__ = ["natal_kicks"]
 
 
-def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000):
+def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000, *,
+                               SNe_method='rapid'):
     '''Retention fraction alg. based on a Maxwellian kick velocity distribution.
 
     This method is based on the assumption that the natal kick velocity is
@@ -38,6 +39,11 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000):
         The maximum velocity bound of the Maxwellian distribution.
         As long as it's well above the escape velocity, this is not important.
 
+    SNe_method : {'rapid', 'delayed'}, optional
+        Whether to use the "rapid" (default) or "delayed" supernovae
+        prescriptions described by Fryer+2012 to determine the fallback
+        fraction as a function of the black hole mass.
+
     Returns
     -------
     float
@@ -54,7 +60,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000):
         exponent = (x ** 2) * np.exp((-1 * (x ** 2)) / (2 * (a ** 2)))
         return norm * exponent / a ** 3
 
-    fb = _F12_fallback_frac(FeH)(m)
+    fb = _F12_fallback_frac(FeH, SNe_method=SNe_method)(m)
 
     if fb >= 1.0:  # TODO breaks on m is array
         return 1.0
@@ -73,15 +79,19 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000):
     return retention
 
 
-def _F12_fallback_frac(FeH):
+def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
     '''Get the fallback fraction for this mass, interpolated from SSE models
     based on the prescription from Fryer 2012.
-    Note there are no checks on FeH here, so make sure it's within the grid.'''
+    Note there are no checks on FeH here, so make sure it's within the grid.
+    
+    SNe_method must be one of rapid or delayed.
+    '''
 
     # load in the ifmr data to interpolate fb from mr
-    feh_path = get_data(f"sse/MP_FEH{FeH:+.2f}.dat")  # .2f snaps to the grid
+    # feh_path = get_data(f"sse/MP_FEH{FeH:+.2f}.dat")  # .2f snaps to the grid
+    feh_path = get_data(f"ifmr/uSSE_{SNe_method}/IFMR_FEH{FeH:+.2f}.dat")
 
-    # load in the data
+    # load in the data (only final remnant mass and fbac)
     fb_grid = np.loadtxt(feh_path, usecols=(1, 3), unpack=True)
 
     # Interpolate the mr-fb grid

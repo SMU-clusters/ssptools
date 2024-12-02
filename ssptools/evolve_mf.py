@@ -249,7 +249,7 @@ class EvolvedMF:
                  vesc=90, kick_vdisp=265., f_kick=None,
                  kick_slope=1, kick_scale=20,
                  stellar_evolution=True, md=1.2, esc_norm='N',
-                 BH_IFMR_method='fryer12', WD_IFMR_method='mist18',
+                 BH_IFMR_method='banerjee20', WD_IFMR_method='mist18',
                  BH_IFMR_kwargs=None, WD_IFMR_kwargs=None,
                  binning_breaks=None, binning_method='default'):
 
@@ -338,8 +338,8 @@ class EvolvedMF:
 
             case 'maxwellian' | 'f12' | 'fryer2012':
 
-                from .ifmr import _check_F12_BH_FeH_bounds
-                FeH_BH = _check_F12_BH_FeH_bounds(FeH)
+                from .ifmr import _check_IFMR_FeH_bounds
+                FeH_BH = _check_IFMR_FeH_bounds(FeH)
 
                 self._kick_kw = dict(
                     method=kick_method, f_kick=f_kick, vesc=vesc,
@@ -1298,8 +1298,8 @@ class InitialBHPopulation:
 
                 case 'maxwellian' | 'f12' | 'fryer2012':
 
-                    from .ifmr import _check_F12_BH_FeH_bounds
-                    FeH_BH = _check_F12_BH_FeH_bounds(FeH)
+                    from .ifmr import _check_IFMR_FeH_bounds
+                    FeH_BH = _check_IFMR_FeH_bounds(FeH)
 
                     kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
                                    FeH=FeH_BH, vdisp=kick_vdisp)
@@ -1338,7 +1338,7 @@ class InitialBHPopulation:
     @classmethod
     def from_IMF(cls, IMF, nbins, FeH, N0=5e5, *, natal_kicks=True,
                  binning_breaks=None, binning_method='default',
-                 BH_IFMR_method='fryer12', WD_IFMR_method='mist18',
+                 BH_IFMR_method='banerjee20', WD_IFMR_method='mist18',
                  BH_IFMR_kwargs=None, WD_IFMR_kwargs=None, **kwargs):
         '''Initialize a BH population by evolving from an IMF.
 
@@ -1595,7 +1595,7 @@ class InitialBHPopulation:
     @classmethod
     def from_BHMF(cls, m_breaks, a_slopes, nbins, FeH, N0=1000, *,
                   natal_kicks=True, binning_method='default',
-                  BH_IFMR_method='fryer12', WD_IFMR_method='mist18',
+                  BH_IFMR_method='banerjee20', WD_IFMR_method='mist18',
                   BH_IFMR_kwargs=None, WD_IFMR_kwargs=None, **kwargs):
         '''Initialize a BH population based on a given power-law mass function.
 

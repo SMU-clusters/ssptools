@@ -155,11 +155,11 @@ def _linear_WD_predictor(slope=0.15, scale=0.5, m_upper=5.5):
 # --------------------------------------------------------------------------
 
 
-def _check_F12_BH_FeH_bounds(FeH):
+def _check_IFMR_FeH_bounds(FeH, loc='sse'):
     # Sometimes this is needed elsewhere (e.g. kicks) so make separate func
 
     bhgrid = np.array([float(fn.stem.split('FEH')[-1])
-                       for fn in get_data('sse').glob('MP*dat')])
+                       for fn in get_data(loc).glob('*dat')])
 
     mssg = ("{0:.2f} is out of bounds for the {1} metallicity grid, "
             "falling back to {2} of {3:.2f}")
@@ -176,15 +176,63 @@ def _check_F12_BH_FeH_bounds(FeH):
         return FeH
 
 
-# TODO should allow others like F12-delayed, B08/startrack
-def _F12_BH_predictor(FeH):
+def _Ba20_r_BH_predictor(FeH):
     '''Return BH IFMR function, based on Fryer+2012 rapid-SNe prescription.'''
 
     # ----------------------------------------------------------------------
     # Check [Fe/H] is within model grid and adjust otherwise
     # ----------------------------------------------------------------------
 
-    FeH = _check_F12_BH_FeH_bounds(FeH)
+    FeH = _check_IFMR_FeH_bounds(FeH, loc='ifmr/uSSE_rapid')
+
+    # ----------------------------------------------------------------------
+    # Load BH IFMR values
+    # ----------------------------------------------------------------------
+
+    # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
+    bhifmr = np.loadtxt(get_data(f"ifmr/uSSE_rapid/IFMR_FEH{FeH:+.2f}.dat"))
+
+    # Grab only stellar type 14 (BHs)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+
+    # linear spline to avoid boundary effects near m_A, m_B, etc
+    BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
+
+    BH_mi = bounds(BH_mi[0], BH_mi[-1])
+
+    BH_mf = bounds(np.min(BH_mf), np.inf)
+
+    return BH_spline, BH_mi, BH_mf
+
+
+def _Ba20_d_BH_predictor(FeH):
+    '''Return BH IFMR function, based on Fryer+2012 delayed-SNe prescription.'''
+
+    # ----------------------------------------------------------------------
+    # Check [Fe/H] is within model grid and adjust otherwise
+    # ----------------------------------------------------------------------
+
+    FeH = _check_IFMR_FeH_bounds(FeH, loc='ifmr/uSSE_delayed')
+
+    # ----------------------------------------------------------------------
+    # Load BH IFMR values
+    # ----------------------------------------------------------------------
+
+    # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
+    bhifmr = np.loadtxt(get_data(f"ifmr/uSSE_delayed/IFMR_FEH{FeH:+.2f}.dat"))
+
+    # Grab only stellar type 14 (BHs)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+
+    # linear spline to avoid boundary effects near m_A, m_B, etc
+    BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
+
+    BH_mi = bounds(BH_mi[0], BH_mi[-1])
+
+    BH_mf = bounds(np.min(BH_mf), np.inf)
+
+    return BH_spline, BH_mi, BH_mf
+
 
     # ----------------------------------------------------------------------
     # Load BH IFMR values
@@ -235,8 +283,6 @@ def _powerlaw_BH_predictor(exponent=3, slope=3e-5, scale=14, m_lower=19):
 def _brokenpl_BH_predictor(exponents=[1, 3, 1], slopes=[1, 6e-4, 0.43],
                            scales=[0, 0, 0], m_breaks=[20, 22, 36, 100]):
     '''Return N-component power law BH IFMR function.'''
-
-    import scipy.optimize as opt
 
     # TODO wont accept lists, need to coerce in _lines
     BH_line = _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks)
@@ -348,7 +394,7 @@ class IFMR:
 
     def __init__(self, FeH, *, NS_mass=1.4,
                  WD_method='mist18', WD_kwargs=None,
-                 BH_method='fryer12', BH_kwargs=None):
+                 BH_method='banerjee20', BH_kwargs=None):
 
         self.FeH = FeH
 
@@ -361,7 +407,15 @@ class IFMR:
 
         match BH_method.casefold():
 
-            case 'fryer12' | 'f12':
+            case ('nbody7' | 'banerjee20' | 'ba20'
+                  | 'nbody7-rapid' | 'banerjee20-rapid' | 'ba20-rapid'):
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _Ba20_r_BH_predictor(**BH_kwargs)
+
+            case 'nbody7-delayed' | 'banerjee20-delayed' | 'ba20-delayed':
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _Ba20_d_BH_predictor(**BH_kwargs)
+
                 BH_kwargs.setdefault('FeH', FeH)
                 BH_func, BH_mi, BH_mf, = _F12_BH_predictor(**BH_kwargs)
 
