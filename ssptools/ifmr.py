@@ -18,6 +18,28 @@ bounds = collections.namedtuple('bounds', ('lower', 'upper'))
 _ROOT = pathlib.Path(__file__).parent
 
 
+# SOME default COSMIC/BSE params which don't really affect single star IFMRs.
+_DEFAULT_BSEDICT = dict(
+    pts1=0.001, pts2=0.02, pts3=0.02,  # These 3 do matter but are just t-steps
+    neta=0.5, bwind=0.0, hewind=0.5, beta=-1.0, xi=1.0,  acc2=1.5, alpha1=1.0,
+    lambdaf=0., ceflag=1, cekickflag=2, cehestarflag=0, cemergeflag=0, qcflag=1,
+    kickflag=0, bhflag=0, sigma=265.0, bhsigmafrac=1.0, sigmadiv=-20.0,
+    ecsn=2.25, ecsn_mlow=1.4, polar_kick_angle=90, aic=1, ussn=1,
+    mxns=2.5, rembar_massloss=0.5, wd_mass_lim=1, bhspinflag=0, bhspinmag=0.0,
+    grflag=1, eddfac=1., gamma=-2., don_lim=-1, acc_lim=-1, tflag=1, ST_tide=1,
+    ifflag=0, wdflag=1, epsnov=0.001, bdecayfac=1, bconst=3000, ck=1000,
+    rejuv_fac=1.0, rejuvflag=0, bhms_coll_flag=0, htpmb=1, ST_cr=1, rtmsflag=0,
+    qcrit_array=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    natal_kick_array=[[-100.0, -100.0, -100.0, -100.0, 0.0],
+                      [-100.0, -100.0, -100.0, -100.0, 0.0]],
+    fprimc_array=[2.0 / 21.0, 2.0 / 21.0, 2.0 / 21.0, 2.0 / 21.0,
+                  2.0 / 21.0, 2.0 / 21.0, 2.0 / 21.0, 2.0 / 21.0,
+                  2.0 / 21.0, 2.0 / 21.0, 2.0 / 21.0, 2.0 / 21.0,
+                  2.0 / 21.0, 2.0 / 21.0, 2.0 / 21.0, 2.0 / 21.0],
+)
+
+
 def get_data(path):
     '''Get path of data from path relative to install dir.'''
     return _ROOT / "data" / path
@@ -234,12 +256,89 @@ def _Ba20_d_BH_predictor(FeH):
     return BH_spline, BH_mi, BH_mf
 
 
+def _COSMIC_full_BH_predictor(FeH, remnantflag=3, windflag=3, eddlimflag=0,
+                              pisn=45., zsun=0.02, **bse_kwargs):
+    from multiprocessing import cpu_count
+
+    from cosmic.evolve import Evolve
+    from cosmic.sample.initialbinarytable import InitialBinaryTable
+
+    Z = zsun * 10**FeH
+
+    mi_grid = np.arange(15, 150.1, 0.1)
+    n = mi_grid.size
+    t_final = 13700  # [Myr]
+
+    init_table = InitialBinaryTable.InitialBinaries(
+        m1=mi_grid, m2=np.zeros(n),
+        porb=np.ones(n), ecc=np.ones(n),
+        tphysf=np.ones(n) * t_final, kstar1=np.ones(n),
+        kstar2=np.ones(n), metallicity=np.ones(n) * Z
+    )
+
+    # Package COSMIC/BSE args together
+    important_kwargs = dict(remnantflag=remnantflag, windflag=windflag,
+                            eddlimflag=eddlimflag, pisn=pisn, zsun=zsun)
+    bsedict = _DEFAULT_BSEDICT | bse_kwargs | important_kwargs
+
+    _, bcm, *_ = Evolve.evolve(initialbinarytable=init_table,
+                               BSEDict=bsedict, nproc=cpu_count())
+
+    bh_index = bcm[bcm['kstar_1'] == 14].index
+    BH_mi = bcm[bcm.index.isin(bh_index)][::2]['mass_1'].values
+    BH_mf = bcm[bcm.index.isin(bh_index)][1::2]['mass_1'].values
+
+    BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
+
+    BH_mi = bounds(BH_mi[0], BH_mi[-1])
+
+    BH_mf = bounds(np.min(BH_mf), np.inf)
+
+    return BH_spline, BH_mi, BH_mf
+
+
+def _COSMIC_r_BH_predictor(FeH):
+
+    # ----------------------------------------------------------------------
+    # Check [Fe/H] is within model grid and adjust otherwise
+    # ----------------------------------------------------------------------
+
+    FeH = _check_IFMR_FeH_bounds(FeH, loc='ifmr/COSMIC_rapid')
+
     # ----------------------------------------------------------------------
     # Load BH IFMR values
     # ----------------------------------------------------------------------
 
     # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
-    bhifmr = np.loadtxt(get_data(f"sse/MP_FEH{FeH:+.2f}.dat"))
+    bhifmr = np.loadtxt(get_data(f"ifmr/COSMIC_rapid/IFMR_FEH{FeH:+.2f}.dat"))
+
+    # Grab only stellar type 14 (BHs)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+
+    # linear spline to avoid boundary effects near m_A, m_B, etc
+    BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
+
+    BH_mi = bounds(BH_mi[0], BH_mi[-1])
+
+    BH_mf = bounds(np.min(BH_mf), np.inf)
+
+    return BH_spline, BH_mi, BH_mf
+
+
+def _COSMIC_d_BH_predictor(FeH):
+
+    # ----------------------------------------------------------------------
+    # Check [Fe/H] is within model grid and adjust otherwise
+    # ----------------------------------------------------------------------
+
+    FeH = _check_IFMR_FeH_bounds(FeH, loc='ifmr/COSMIC_delayed')
+
+    # ----------------------------------------------------------------------
+    # Load BH IFMR values
+    # ----------------------------------------------------------------------
+
+    # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
+    bhifmr = np.loadtxt(get_data(f"ifmr/COSMIC_delayed/IFMR_FEH{FeH:+.2f}.dat"))
 
     # Grab only stellar type 14 (BHs)
     BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
@@ -416,8 +515,17 @@ class IFMR:
                 BH_kwargs.setdefault('FeH', FeH)
                 BH_func, BH_mi, BH_mf, = _Ba20_d_BH_predictor(**BH_kwargs)
 
+            case 'cosmic':
                 BH_kwargs.setdefault('FeH', FeH)
-                BH_func, BH_mi, BH_mf, = _F12_BH_predictor(**BH_kwargs)
+                BH_func, BH_mi, BH_mf, = _COSMIC_full_BH_predictor(**BH_kwargs)
+
+            case 'cosmic-rapid':
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _COSMIC_r_BH_predictor(**BH_kwargs)
+
+            case 'cosmic-delayed':
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _COSMIC_d_BH_predictor(**BH_kwargs)
 
             case 'linear' | 'line':
                 BH_func, BH_mi, BH_mf, = _linear_BH_predictor(**BH_kwargs)
