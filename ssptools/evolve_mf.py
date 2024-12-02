@@ -955,6 +955,12 @@ class EvolvedMFWithBH(EvolvedMF):
         If more than one output time is specified, a list of floats with size
         `nout` is required.
 
+    strict_BH_target : bool, optional
+        If True, will error when the amount of BHs formed and then lost through
+        natal kicks results in an f_BH less than the target final `f_BH`
+        (this would make `f_BH` unreachable by dynamical BH losses). If False,
+        the final `f_BH` may be smaller than requested.
+
     *args, **kwargs
         All remaining arguments are passed to `EvolvedMF`. Note that passing
         a `BH_ret_dyn` will have no effect on the BHs.
@@ -971,7 +977,7 @@ class EvolvedMFWithBH(EvolvedMF):
     '''
 
     def __init__(self, IMF, nbins, FeH, tout, esc_rate, f_BH,
-                 *args, **kwargs):
+                 *args, strict_BH_target=True, **kwargs):
 
         self._fBH_target = np.atleast_1d(f_BH)
 
@@ -982,6 +988,8 @@ class EvolvedMFWithBH(EvolvedMF):
         if np.any(self._fBH_target < 0):
             mssg = f"`f_BH` ({self._fBH_target}) must be greater than 0"
             raise ValueError(mssg)
+
+        self.strict_BH_target = strict_BH_target
 
         # leave BH_ret_dyn as default, will be ignored. BH_ret_int is fine
         super().__init__(IMF, nbins, FeH, tout, esc_rate,
@@ -1222,7 +1230,13 @@ class EvolvedMFWithBH(EvolvedMF):
                             f"after natal kicks). Reduce `f_BH`, alter IMF "
                             f"slopes or turn off / alter natal kicks."
                         )
-                        raise ValueError(mssg)
+                        if self.strict_BH_target:
+                            raise ValueError(mssg)
+                        else:
+                            # Will pass harmlessly through _dyn_eject_BH
+                            mssg += (" Proceeding anyways due to "
+                                     "`strict_BH_target=False`.")
+                            warnings.warn(mssg)
 
                     # Remove dynamical BH ejections
                     #   (note different signature to EvolvedMF)
