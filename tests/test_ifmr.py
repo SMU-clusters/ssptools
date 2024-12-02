@@ -28,7 +28,7 @@ class TestMetallicity:
 
     @pytest.mark.parametrize("FeH, expected", zip(metals, BH_metals))
     def test_BH_FeH(self, FeH, expected):
-        assert ifmr._check_F12_BH_FeH_bounds(FeH) == expected
+        assert ifmr._check_IFMR_FeH_bounds(FeH) == expected
 
 
 class TestPredictors:
@@ -111,19 +111,19 @@ class TestPredictors:
 
     @pytest.mark.parametrize(
         'FeH, expected',
-        zip(metals, [[5.498, 15.6225, 19.069, 29.8365, 49.942],
-                     [5.498, 15.6225, 19.069, 29.8365, 49.942],
-                     [4.813, 15.9855, 19.078, 29.966, 45.441],
-                     [7.266, 12.2005, 17.896, 28.841, 40.681],
-                     [10.589, 9.8829, 15.54, 24.5635, 34.873],
-                     [8.585, 12.98655, 28.132, 31.017, 33.916],
-                     [8.585, 12.98655, 28.132, 31.017, 33.916]])
+        zip(metals, [[5.17365, 16.038835, 19.48679, 29.98945, 48.27369],
+                     [5.17365, 16.038835, 19.48679, 29.98945, 48.27369],
+                     [4.89109, 15.7271, 19.15276, 29.835705, 44.249],
+                     [8.59656, 10.809675, 17.3977, 27.903175, 39.67126],
+                     [11.26324, 8.875225, 14.38747, 22.30988, 27.53808],
+                     [8.95447, 19.901125, 25.89775, 29.409525, 31.06735],
+                     [8.95447, 19.901125, 25.89775, 29.409525, 31.06735]])
     )
-    def test_F12_BH_predictor(self, FeH, expected):
+    def test_Ba20_r_BH_predictor(self, FeH, expected):
 
         mi = np.linspace(5., 100., 5)
 
-        pred, *_ = ifmr._F12_BH_predictor(FeH)
+        pred, *_ = ifmr._Ba20_r_BH_predictor(FeH)
 
         assert pred(mi) == pytest.approx(expected)
 
@@ -188,21 +188,21 @@ class TestBounds:
     # ----------------------------------------------------------------------
 
     # Initial and final mass bounds for all remnants, for each FeH in `metals`
-    BH_mi = [(19.7, 150.0), (19.7, 150.0), (19.8, 150.0), (20.5, 150.0),
-             (20.9, 150.0), (24.3, 150.0), (24.3, 150.0)]
+    BH_mi = [(19.7, 250.0), (19.7, 250.0), (19.9, 250.0), (20.6, 250.0),
+             (21.1, 250.0), (25.5, 250.0), (25.5, 250.0)]
 
-    BH_mf = [(5.4977, np.inf), (5.4977, np.inf), (5.5952, np.inf),
-             (5.503, np.inf), (5.5386, np.inf), (5.5081, np.inf),
-             (5.5081, np.inf)]
+    BH_mf = [(5.59413, np.inf), (5.59413, np.inf), (5.50497, np.inf),
+             (5.51648, np.inf), (5.55204, np.inf), (5.50509, np.inf),
+             (5.50509, np.inf)]
 
     @pytest.mark.parametrize("FeH, expected_mi", zip(metals, BH_mi))
-    def test_F12_BH_mi(self, FeH, expected_mi):
-        _, mi, _ = ifmr._F12_BH_predictor(FeH)
+    def test_Ba20_r_BH_mi(self, FeH, expected_mi):
+        _, mi, _ = ifmr._Ba20_r_BH_predictor(FeH)
         assert mi == pytest.approx(expected_mi)
 
     @pytest.mark.parametrize("FeH, expected_mf", zip(metals, BH_mf))
-    def test_F12_BH_mf(self, FeH, expected_mf):
-        _, _, mf = ifmr._F12_BH_predictor(FeH)
+    def test_Ba20_r_BH_mf(self, FeH, expected_mf):
+        _, _, mf = ifmr._Ba20_r_BH_predictor(FeH)
         assert mf == pytest.approx(expected_mf)
 
     # ----------------------------------------------------------------------
@@ -262,7 +262,7 @@ class TestBounds:
 
 
 class TestPredictions:
-    '''Tests about IFMR remnant mass and type predictions'''
+    '''Tests about default IFMR remnant mass and type predictions'''
 
     IFMR = ifmr.IFMR(FeH=-1.00)
 
@@ -273,8 +273,8 @@ class TestPredictions:
         0.576329, 0.608092, 0.654573, 0.686416, 0.731103,
         0.897034, 1.05756359, 1.10926924,
         1.4, 1.4, 1.4, 1.4, 1.4,  # Neutron Stars
-        17.413826, 10.313890, 19.816023, 15.147086, 21.023453,  # Black Holes
-        29.188165, 40.681
+        16.560239, 9.382873, 15.226190, 14.71036, 20.419381,  # Black Holes
+        28.369477, 39.67126
     ])
 
     rem_types = (['WD'] * 13) + (['NS'] * 5) + (['BH'] * 7)

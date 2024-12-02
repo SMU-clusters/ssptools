@@ -16,7 +16,7 @@ class TestRetentionAlgorithms:
 
     # Maxwellian not yet mass-vectorized, so need to check individual masses
     @pytest.mark.parametrize('vdisp', [200., 265., 300.])
-    @pytest.mark.parametrize('FeH', [-2., -0.5, 0.5])
+    @pytest.mark.parametrize('FeH', [-2., -0.5, 0.3])
     @pytest.mark.parametrize('vesc', [25., 100., 200.])
     @pytest.mark.parametrize('m', [0.01, 0.5, 1.0, 10.0, 100., 150.])
     def test_maxwellian_retention_frac(self, m, vesc, FeH, vdisp):
@@ -64,18 +64,18 @@ class TestNatalKicks:
     @pytest.mark.parametrize(
         'FeH, vesc, expected',
         [
-            (-1., 25., np.stack((np.array([0.002227, 0.002227, 0.002779]),
-                                 np.array([0.004454, 0.002227, 0.001389])))),
-            (-1., 100., np.stack((np.array([0.136963, 0.136963, 0.169875]),
-                                  np.array([0.273926, 0.136963, 0.084937])))),
-            (-1., 200., np.stack((np.array([0.966443, 0.966443, 1.175480]),
-                                  np.array([1.932887, 0.966443, 0.587740])))),
-            (0.5, 25., np.stack((np.array([0.002227, 0.002227, 0.002728]),
-                                 np.array([0.004454, 0.002227, 0.001364])))),
-            (0.5, 100., np.stack((np.array([0.136963, 0.136963, 0.166823]),
-                                  np.array([0.273926, 0.136963, 0.083411])))),
-            (0.5, 200., np.stack((np.array([0.966443, 0.966443, 1.156390]),
-                                  np.array([1.932887, 0.966443, 0.578195])))),
+            (-1., 25., np.stack((np.array([0.002227, 0.002227, 0.002810]),
+                                 np.array([0.004454, 0.002227, 0.001405])))),
+            (-1., 100., np.stack((np.array([0.136963, 0.136963, 0.171672]),
+                                  np.array([0.273926, 0.136963, 0.085836])))),
+            (-1., 200., np.stack((np.array([0.966443, 0.966443, 1.186696]),
+                                  np.array([1.932887, 0.966443, 0.593348])))),
+            (0.3, 25., np.stack((np.array([0.002227, 0.002227, 0.002727]),
+                                 np.array([0.004454, 0.002227, 0.001363])))),
+            (0.3, 100., np.stack((np.array([0.136963, 0.136963, 0.166788]),
+                                  np.array([0.273926, 0.136963, 0.08339])))),
+            (0.3, 200., np.stack((np.array([0.966443, 0.966443, 1.156175]),
+                                  np.array([1.932887, 0.966443, 0.578087]))))
         ],
     )
     def test_F12_kicks_quantities(self, Mi, Ni, FeH, vesc, expected):
@@ -87,12 +87,12 @@ class TestNatalKicks:
     @pytest.mark.parametrize(
         'FeH, vesc, expected',
         [
-            (-1., 25., 29.992765),
-            (-1., 100., 29.556198),
-            (-1., 200., 26.891631),
-            (0.5, 25., 29.992817),
-            (0.5, 100., 29.559250),
-            (0.5, 200., 26.910721),
+            (-1., 25., 29.992735),
+            (-1., 100., 29.554400),
+            (-1., 200., 26.880415),
+            (0.3, 25., 29.992818),
+            (0.3, 100., 29.559284),
+            (0.3, 200., 26.910936),
         ],
     )
     def test_F12_kicks_total(self, Mi, Ni, FeH, vesc, expected):
