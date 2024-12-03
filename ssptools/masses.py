@@ -12,7 +12,11 @@ rem_classes = namedtuple('rem_classes', ('WD', 'NS', 'BH'))
 star_classes = namedtuple('star_classes', ('MS',) + rem_classes._fields)
 
 
-@np.errstate(invalid='ignore')
+# --------------------------------------------------------------------------
+# Helper functions
+# --------------------------------------------------------------------------
+
+
 def Pk(a, k, m1, m2):
     r'''Convenience function for computing quantities related to IMF
 
@@ -43,10 +47,16 @@ def Pk(a, k, m1, m2):
     '''
 
     a = np.asarray(a, dtype=float)
-    res = np.asarray((m2 ** (a + k) - m1 ** (a + k)) / (a + k))  # a != k
+
+    with np.errstate(invalid='ignore'):  # catch when a == k and warnings fly
+
+        res = np.asarray((m2 ** (a + k) - m1 ** (a + k)) / (a + k))  # a != k
 
     if (casemask := np.asarray(-a == k)).any():
         res[casemask] = np.log(m2 / m1)[casemask]
+
+    # floating point check for *very* thin bins (m_lower~m_upper)
+    res[res < np.finfo(float).resolution] = np.nan
 
     return res
 
@@ -57,13 +67,254 @@ def _divide_bin_sizes(N, Nsec):
     return ext * [Neach + 1] + (Nsec - ext) * [Neach]
 
 
+# --------------------------------------------------------------------------
+# Initial Mass Functions
+# --------------------------------------------------------------------------
+
+class PowerLawIMF:
+    '''Representation of a N-component power law Initial Mass Function (IMF).
+
+    Based on a set of power law exponent slopes and break masses, constructs a
+    stellar initial mass function (IMF) with useful methods for computing the
+    expected total number or mass of stars of a given individual mass, both
+    for continuous mass distribution and sets of mass bins.
+
+    Parameters
+    ----------
+    m_break : list of N+1 float
+        IMF break-masses (including outer bounds) defining the mass ranges
+        covered by each component of this IMF.
+
+    a : list of N float
+        IMF power law slopes defining the exponent (e.g. :math:`m^{a_i}`) of
+        each component of this IMF.
+
+    N0 : int, optional
+        Total initial number of stars, over all bins. Used to determine the
+        normalization factor. This value acts as the default when `N` is not
+        passed to various methods.
+
+    ext : int or str, optional
+        Controls the behaviour of the IMF outside of the mass interval (defined
+        by the edges of `m_break`).
+
+        * if ext=0 or ‘extrapolate’, extrapolate the nearest component.
+        * if ext=1 or ‘zeros’, return 0 (default).
+        * if ext=2 or ‘raise’, raise a ValueError.
+
+        If ext=0, the IMF will still be normalized to N0 within the mass bounds.
+    '''
+
+    def __repr__(self):
+        return f"PowerLawIMF(m_break={self.mb}, a={self.a}, N0={self.N0})"
+
+    @property
+    def mmean(self):
+        '''The overall mean individual stellar mass of this IMF'''
+        return self.Mtot / self.N0
+
+    @property
+    def Mtot(self):
+        '''Total mass of system under this IMF (assuming `self.N0` stars).'''
+        from scipy.integrate import quad
+        return quad(self.M, self.mb[0], self.mb[-1])[0]
+
+    @classmethod
+    def from_M0(cls, m_break, a, M0, *, ext='zeros'):
+        '''Initialize an IMF with the N0 required to have a total mass of M0.'''
+
+        imf = cls(m_break=m_break, a=a, N0=1, ext='zeros')
+
+        N0 = M0 / imf.mmean
+        imf.N0 = N0
+
+        return imf
+
+    def __init__(self, m_break, a, N0=1, *, ext='zeros'):
+
+        Nc = len(a)
+        mb = m_break
+
+        if (Nmb := len(mb)) != Nc + 1:
+            mssg = f"`m_break` must have size len(a) + 1 ({Nc + 1}), not {Nmb}"
+            raise ValueError(mssg)
+        elif Nmb < 2:
+            mssg = "`m_break` must be at least size 2 (upper and lower bounds)"
+            raise ValueError(mssg)
+
+        if not np.all(np.diff(mb) > 0):
+            mssg = "All break masses must be in increasing order"
+            raise ValueError(mssg)
+
+        self.mb = np.asarray(mb)
+        self.a = np.asarray(a)
+        self.N0 = N0
+        self.Ncomp = Nc
+
+        self._A_comps = np.empty(Nc)
+
+        # Compute the final A_N normalization component
+        # A_N^{-1} = \sum_{i=1}^{N} P(a_i) \prod_{j=i+1}^{N} m_{j}^{a_j-a_{j-1}}
+        self._A_comps[Nc - 1] = (
+            np.sum([
+                Pk(a[i], 1, mb[i], mb[i + 1]) * np.prod([
+                    mb[j]**(a[j] - a[j - 1])
+                    for j in range(i + 1, Nc)
+                ])
+                for i in range(0, Nc)
+            ])
+        )**(-1)
+
+        # Compute all the following A_i normalization components
+        for i in range(self.Ncomp - 1, 0, -1):
+            self._A_comps[i - 1] = self._A_comps[i] * mb[i]**(a[i] - a[i - 1])
+
+        match ext:
+            case 0 | 'ext' | 'extrapolate':
+                self._ext = 0
+            case 1 | 'zeros':
+                self._ext = 1
+            case 2 | 'raise':
+                self._ext = 2
+            case _:
+                raise ValueError("ext must be one of ('ext', 'zeros', 'raise')")
+
+    def __call__(self, mass, *, N=None):
+        '''Return the number of stars at a given mass for this IMF, N(m)'''
+
+        mass = np.float64(mass)  # mostly to avoid warnings from scipy.integrate
+
+        N = N if N is not None else self.N0
+
+        if self._ext == 0:
+
+            if self.Ncomp == 1:
+                bounds = [True, ] * self._A_comps.size
+
+            else:
+                # Don't cut on the outermost lower and upper bounds
+                bounds = [
+                    (mass <= self.mb[1]),
+                    *((lw_bnd <= mass) & (mass <= up_bnd)
+                      for lw_bnd, up_bnd in zip(self.mb[1:-2], self.mb[2:-1])),
+                    (self.mb[-2] <= mass)
+                ]
+
+        else:
+            bounds = [(lw_bnd <= mass) & (mass <= up_bnd)
+                      for lw_bnd, up_bnd in zip(self.mb[:-1], self.mb[1:])]
+
+        default = np.nan if self._ext == 2 else 0
+
+        vals = (self._A_comps * mass[..., np.newaxis]**self.a).T
+
+        out = N * np.select(bounds, vals, default=default)
+
+        if self._ext == 2 and (~np.isfinite(out)).any():
+            mssg = f"mass outside bounds ({self.mb[0]}, {self.mb[-1]})"
+            raise ValueError(mssg)
+
+        else:
+            return out
+
+    def N(self, m, *, N=None):
+        '''Return the number of stars at a given mass for this IMF, N(m)'''
+        return self(m, N=N)
+
+    def M(self, m, *, N=None):
+        '''Return the total mass of stars at a given mass for this IMF, M(m)'''
+        return m * self(m, N=N)
+
+    def binned_eval(self, bins, *, N=None):
+        '''Evaluate this imf within a given set of mass bins.
+
+        Computes the mass and numbers of stars dictated by this IMF within a
+        set of given mass bins (i.e. bin edges) by evaluating the form of the
+        IMF applicable to the area covered by each bin.
+
+        The mean mass in each bin can then be computed as :math:`m=M/N`.
+
+        Parameters
+        ----------
+        bins : mbin
+            The mass bins (defining the upper and lower bounds of each bin) to
+            evaluate the IMF over. These do not necessarily need to align with
+            any IMF break masses.
+
+        N : int, optional
+            Total initial number of stars, over all bins. Used to determine the
+            normalization factor. By default, uses the `N0` parameter set during
+            creation of the class.
+
+        Returns
+        -------
+        binned_N : np.ndarray[Nbins]
+            The total number of stars in each bin. Normalized such that
+            `binned_N.sum() = N`.
+
+        binned_M : np.ndarray[Nbins]
+            The total mass of stars in each bin.
+
+        binned_alpha : np.ndarray[Nbins]
+            The power law exponent corresponding to each mass bin.
+        '''
+
+        N = N if N is not None else self.N0
+
+        # TODO broken when a bin falls on either side of a break mass... ouf
+
+        if self._ext == 0:
+
+            if self.Ncomp == 1:
+                bin_masks = [True, ] * self._A_comps.size
+
+            else:
+
+                # Don't cut on the outermost lower and upper bounds
+                bin_masks = [
+                    (bins.upper <= self.mb[1]),
+                    *((lw_bnd <= bins.lower) & (bins.upper <= up_bnd)
+                      for lw_bnd, up_bnd in zip(self.mb[1:-2], self.mb[2:-1])),
+                    (self.mb[-2] <= bins.upper)
+                ]
+
+        else:
+            bin_masks = [(lw_bnd <= bins.lower) & (bins.upper <= up_bnd)
+                         for lw_bnd, up_bnd in zip(self.mb[:-1], self.mb[1:])]
+
+        default = np.nan if self._ext == 2 else 0
+
+        A = N * np.select(bin_masks, self._A_comps, default=default)
+
+        if self._ext == 2 and (~np.isfinite(A)).any():
+            mssg = f"mass bins outside bounds ({self.mb[0]}, {self.mb[-1]})"
+            raise ValueError(mssg)
+
+        alpha = np.select(bin_masks, self.a, default=default)
+
+        return A * Pk(alpha, 1, *bins), A * Pk(alpha, 2, *bins), alpha
+
+    def binned_N(self, bins, *, N=None):
+        '''Return the total number of stars within given mass bins.'''
+        return self.binned_eval(bins=bins, N=N)[0]
+
+    def binned_M(self, bins, *, N=None):
+        '''Return the total mass of stars within given mass bins.'''
+        return self.binned_eval(bins=bins, N=N)[1]
+
+
+# --------------------------------------------------------------------------
+# Mass Bins
+# --------------------------------------------------------------------------
+
+
 class MassBins:
     '''Representation and handling of mass bins, for both stars and remnants
 
     A class handling the construction, holding and handling of mass bins.
     Both stars and remnants mass bins are handled separately.
 
-    Based on input parameters defining the binned mass function (break masses,
+    Based on input parameters defining the binning scheme (break masses,
     number of bins, etc.) sets up the spacing and boundaries of mass bins.
     Mass bins are defined using the `mbin` named tuple, with upper and lower
     bounds for each bin.
@@ -95,18 +346,13 @@ class MassBins:
     Methods are available here to pack these distinct arrays into a single `y`
     or unpack a single `y` into the separate arrays.
 
-    Note: currently this class only supports an IMF of a 3-component power
-    law.
-
     Parameters
     ----------
-    m_break : list of float
-        IMF break-masses (including outer bounds; size 4)
+    m_break : list of N+1 float
+        Mass bin break-masses (including outer bounds) used to define (if N>1)
+        portions of the mass interval to be divided separately.
 
-    a : list of float
-        IMF power law slopes (size 3)
-
-    nbins : int or list of int (size 3) or dict
+    nbins : int or list of N int or dict
         Number of stellar mass bins in each regime. If a single integer, the
         number mass bins between each break mass will be equal, otherwise
         the number of bins between each can be specified directly.
@@ -115,8 +361,10 @@ class MassBins:
         Also allowed is a dict of {'MS', 'WD', 'NS', 'BH'}, each containing
         a number of bins, where the remnant bins can be specified directly.
 
-    N0 : int
-        Total initial number of stars
+    imf : PowerLawIMF
+        Initial mass function class, required for determining the initial
+        star amounts in the `initial_values` method. Any break masses used in
+        the IMF construction are *not* used to setup mass bins.
 
     ifmr : ifmr.IFMR
         Initial-final mass relation class, required to set remnant mass
@@ -145,12 +393,12 @@ class MassBins:
 
     '''
 
-    def __init__(self, m_break, a, nbins, N0, ifmr, *,
+    def __init__(self, m_break, nbins, imf, ifmr, *,
                  binning_method='default'):
 
-        N_MS_breaks = len(m_break) - 1
+        self.imf = imf
 
-        self.a, self.m_break, self.N0 = a, m_break, N0
+        N_MS_breaks = len(m_break) - 1
 
         # ------------------------------------------------------------------
         # Unpack number of stellar bins
@@ -171,6 +419,7 @@ class MassBins:
 
         # Single number divided equally between break masses
         if isinstance(nbin_MS, int):
+            # TODO breaks if nbins is dict
             self._nbin_MS_each = _divide_bin_sizes(nbins, N_MS_breaks)
 
         # List of bins between each break mass
@@ -230,7 +479,12 @@ class MassBins:
             WD_bl, WD_bu = ifmr.WD_mf
             WD_bl = m_break[0] if WD_bl < m_break[0] else WD_bl
 
-            bin_sides = binfunc(WD_bl, WD_bu, nbin_WD)
+            if WD_bu <= WD_bl:
+                mssg = (f"WD upper bound ({WD_bu}) cannot be lower than "
+                        f"lower bound ({WD_bl})")
+                raise ValueError(mssg)
+
+            bin_sides = binfunc(WD_bl, WD_bu, nbin_WD + 1)
             bins_WD = mbin(bin_sides[:-1], bin_sides[1:])
 
             # Black Holes
@@ -240,7 +494,12 @@ class MassBins:
             BH_bl, BH_bu = ifmr.BH_mf
             BH_bu = m_break[-1] if BH_bu > m_break[-1] else BH_bu
 
-            bin_sides = binfunc(BH_bl, BH_bu, nbin_BH)
+            if BH_bl >= BH_bu:
+                mssg = (f"BH lower bound ({BH_bl}) cannot be higher than "
+                        f"upper bound ({BH_bu})")
+                raise ValueError(mssg)
+
+            bin_sides = binfunc(BH_bl, BH_bu, nbin_BH + 1)
             bins_BH = mbin(bin_sides[:-1], bin_sides[1:])
 
             # Neutron Stars
@@ -312,13 +571,12 @@ class MassBins:
 
         self.bins = star_classes(MS=bins_MS, WD=bins_WD, NS=bins_NS, BH=bins_BH)
 
-    def initial_values(self, *, packed=True):
+    def initial_values(self, *, packed=True, N0=None):
         '''Return an array corresponding to `y` populated based on the IMF
 
-        Based on the input IMF slopes and break masses, create an empty `y`
-        array and populate it with "initial" values.
-        These values will populate the number of stars and the alpha slopes,
-        and all remnants will be left as 0.
+        Based on the input IMF , create an empty `y` array and populate it
+        with "initial" values. These values will populate the number of stars
+        and the alpha slopes, and all remnants will be left as 0.
 
         Parameters
         ----------
@@ -333,36 +591,7 @@ class MassBins:
         ndarray or 2-tuple of named `star_classes` tuples
         '''
 
-        # TODO this is where we restrict to 3comp IMF,
-        #   but should be generalized to any number of comps really
-
-        # ------------------------------------------------------------------
-        # Compute normalization factors A_j
-        # ------------------------------------------------------------------
-
-        a, mb = self.a, self.m_break
-
-        A3 = (
-            Pk(a[2], 1, mb[2], mb[3])
-            + (mb[2] ** (a[2] - a[1]) * Pk(a[1], 1, mb[1], mb[2]))
-            + (mb[1] ** (a[1] - a[0]) * (mb[2] ** (a[2] - a[1]))
-               * Pk(a[0], 1, mb[0], mb[1]))
-        )**(-1)
-
-        A2 = A3 * mb[2]**(a[2] - a[1])
-        A1 = A2 * mb[1]**(a[1] - a[0])
-
-        A = self.N0 * np.repeat([A1, A2, A3], self._nbin_MS_each)
-
-        # ------------------------------------------------------------------
-        # Set the initial Nj and mj for all bins (stars and remnants)
-        # ------------------------------------------------------------------
-
-        # Expand array of IMF slopes to all mass bins
-        alpha = np.repeat(a, self._nbin_MS_each)
-
-        # Set initial star bins based on IMF
-        Ns = A * Pk(alpha, 1, *self.bins.MS)
+        Ns, Ms, alpha = self.imf.binned_eval(self.bins.MS, N=N0)
 
         # Set all initial remnant bins to zero
         Nwd, Mwd = np.zeros(self.nbin.WD), np.zeros(self.nbin.WD)
@@ -373,9 +602,6 @@ class MassBins:
             return self.pack_values(Ns, alpha, Nwd, Nns, Nbh, Mwd, Mns, Mbh)
 
         else:
-            # this way so wouldn't have to recompute Ms from typical unpacked
-            Ms = A * Pk(alpha, 2, *self.bins.MS)
-
             N = star_classes(MS=Ns, WD=Nwd, NS=Nns, BH=Nbh)
             M = star_classes(MS=Ms, WD=Mwd, NS=Mns, BH=Mbh)
 

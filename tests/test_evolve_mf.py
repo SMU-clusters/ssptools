@@ -9,9 +9,16 @@ from ssptools import evolve_mf, masses, ifmr
 
 
 # Mixture of `ssptools` and `GCfit` defaults for `evolve_mf`
+
+DEFAULT_M_BREAK = [0.1, 0.5, 1.0, 100]
+
+DEFAULT_IMF = masses.PowerLawIMF(
+    m_break=DEFAULT_M_BREAK, a=[-0.5, -1.3, -2.5], N0=5e5
+)
+
+# TODO need a test for when multiple tout, as that can be unstable.
 DEFAULT_KWARGS = dict(
-    m_breaks=[0.1, 0.5, 1.0, 100], a_slopes=[-0.5, -1.3, -2.5],
-    nbins=[5, 5, 20], FeH=-1.00, tout=[12_000], Ndot=0.,
+    IMF=DEFAULT_IMF, nbins=[5, 5, 20], FeH=-1.00, tout=[12_000], esc_rate=0.,
     N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
     natal_kicks=False, vesc=90
 )
@@ -136,50 +143,6 @@ class TestBHEvolution:
         return np.array([20., 10., 5.])
 
     # ----------------------------------------------------------------------
-    # Test BH natal kick routines
-    # ----------------------------------------------------------------------
-
-    @pytest.mark.parametrize(
-        'vesc, expected',
-        [
-            (25., np.stack((np.array([0.002227, 0.002227, 0.002779]),
-                            np.array([0.004454, 0.002227, 0.001389])))),
-            (100., np.stack((np.array([0.136963, 0.136963, 0.169875]),
-                             np.array([0.273926, 0.136963, 0.084937])))),
-            (200., np.stack((np.array([0.966443, 0.966443, 1.175480]),
-                             np.array([1.932887, 0.966443, 0.587740])))),
-        ],
-        ids=[f'vesc = {v}' for v in (25, 100, 200)]
-    )
-    def test_natal_kick_quantities(self, Mi, Ni, vesc, expected):
-
-        # Results not actually reliant on this evolution, just need the object
-        kw = self.emf_kw | {'vesc': vesc, 'natal_kicks': True}
-        emf = evolve_mf.EvolvedMF(**kw)
-
-        Mf, Nf, _ = emf._natal_kick_BH(Mi, Ni)
-
-        assert np.stack((Mf, Nf)) == pytest.approx(expected, rel=1e-3)
-
-    @pytest.mark.parametrize(
-        'vesc, expected',
-        [
-            (25., 29.992765),
-            (100., 29.556198),
-            (200., 26.891631),
-        ],
-        ids=[f'vesc = {v}' for v in (25, 100, 200)]
-    )
-    def test_natal_kick_total(self, Mi, Ni, vesc, expected):
-
-        kw = self.emf_kw | {'vesc': vesc, 'natal_kicks': True}
-        emf = evolve_mf.EvolvedMF(**kw)
-
-        _, _, ejected = emf._natal_kick_BH(Mi, Ni)
-
-        assert ejected == pytest.approx(expected, rel=1e-3)
-
-    # ----------------------------------------------------------------------
     # Test BH dynamical ejection routines
     # ----------------------------------------------------------------------
 
@@ -292,9 +255,10 @@ class TestDerivatives:
 
     emf_kw = DEFAULT_KWARGS.copy() | {'tout': [0.], 'nbins': [1, 1, 2]}
 
-    mb = masses.MassBins(emf_kw['m_breaks'], emf_kw['a_slopes'],
-                         emf_kw['nbins'], emf_kw['N0'],
-                         ifmr.IFMR(emf_kw['FeH']))
+    imf = DEFAULT_IMF
+
+    mb = masses.MassBins(DEFAULT_M_BREAK, emf_kw['nbins'],
+                         imf, ifmr.IFMR(emf_kw['FeH']))
 
     # ----------------------------------------------------------------------
     # Derivative routines
@@ -348,9 +312,66 @@ class TestDerivatives:
                               0.00000000e+00, 0.00000000e+00])),
         ],
     )
-    def test_esc(self, y, t, expected):
+    def test_esc_N(self, y, t, expected):
 
-        kw = self.emf_kw | {'Ndot': -10}
+        kw = self.emf_kw | {'esc_rate': -10, 'esc_norm': 'N'}
+        emf = evolve_mf.EvolvedMF(**kw)
+
+        ydot = emf._derivs_esc(t, y)
+        assert ydot == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        't, expected',
+        [
+            (100, np.array([-4.19199569e+00, -1.76318142e+00, 0.00000000e+00,
+                            0.00000000e+00, 1.97026640e-03, 3.42799895e-03,
+                            0.00000000e+00, 0.00000000e+00, -1.57520504e+00,
+                            -1.57520504e+00, -1.57520504e+00, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00, -7.87602518e-01,
+                            -7.87602518e-01, -7.87602518e-01, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00])),
+            (12000, np.array([-4.03002189e+00, -2.18608060e+00, 0.00000000e+00,
+                              0.00000000e+00, 1.89413762e-03, 3.11881871e-03,
+                              0.00000000e+00, 0.00000000e+00, -1.51434096e+00,
+                              -1.51434096e+00, -1.51434096e+00, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00, -7.57170479e-01,
+                              -7.57170479e-01, -7.57170479e-01, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00])),
+        ],
+    )
+    def test_esc_M(self, y, t, expected):
+
+        kw = self.emf_kw | {'esc_rate': -5, 'esc_norm': 'M'}
+        emf = evolve_mf.EvolvedMF(**kw)
+
+        ydot = emf._derivs_esc(t, y)
+        assert ydot == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        't, expected',
+        [
+            (100, np.array([-8.38399139e+00, -3.52636283e+00, 0.00000000e+00,
+                            0.00000000e+00, 3.94053281e-03, 6.85599789e-03,
+                            0.00000000e+00, 0.00000000e+00, -3.15041007e+00,
+                            -3.15041007e+00, -3.15041007e+00, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00, -1.57520504e+00,
+                            -1.57520504e+00, -1.57520504e+00, 0.00000000e+00,
+                            0.00000000e+00, 0.00000000e+00])),
+            (12000, np.array([-4.03002189e+00, -2.18608060e+00, 0.00000000e+00,
+                              0.00000000e+00, 1.89413762e-03, 3.11881871e-03,
+                              0.00000000e+00, 0.00000000e+00, -1.51434096e+00,
+                              -1.51434096e+00, -1.51434096e+00, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00, -7.57170479e-01,
+                              -7.57170479e-01, -7.57170479e-01, 0.00000000e+00,
+                              0.00000000e+00, 0.00000000e+00])),
+        ],
+    )
+    def test_esc_M_t(self, y, t, expected):
+
+        def M_t(t):
+            return -10 if t < 500 else -5
+
+        kw = self.emf_kw | {'esc_rate': M_t, 'esc_norm': 'M'}
         emf = evolve_mf.EvolvedMF(**kw)
 
         ydot = emf._derivs_esc(t, y)

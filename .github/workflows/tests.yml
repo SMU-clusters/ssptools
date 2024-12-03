@@ -18,17 +18,17 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python 3.9
+    - name: Set up Python 3.11
       uses: actions/setup-python@v2
       with:
-        python-version: '3.9'
+        python-version: '3.11'
     - name: Install dependencies
       run: |
         sudo apt-get install gsl-bin libgsl0-dev build-essential
         python -m pip install --upgrade pip
         pip install wheel
         pip install flake8 pytest
-        pip install -e .
+        pip install -e .[test]
     - name: Test with pytest
       run: |
         python -m pytest

@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import warnings
+
 import numpy as np
 from scipy.integrate import ode
-from scipy.interpolate import interp1d, UnivariateSpline
 
+from . import kicks
 from .ifmr import IFMR, get_data
-from .masses import MassBins, Pk, mbin
-
+from .masses import PowerLawIMF, MassBins, Pk
 
 # TODO optionally support units for some things
 
@@ -24,19 +25,17 @@ class EvolvedMF:
 
     # TODO add more in-depth explanation or references to actual algorithm here
 
-    Warning: Currently only supports N=3 IMF components.
-
     Parameters
     ----------
-    m_breaks : list of float
-        IMF break-masses (including outer bounds; size N+1).
+    IMF : PowerLawIMF
+        Initial Mass Function (IMF) object, to be used to generate the initial
+        numbers of stars at time 0.
 
-    a_slopes : list of float
-        IMF slopes α (size N).
-
-    nbins : list of int
-        Number of mass bins in each regime of the IMF, as defined by m_breaks
-        (size N).
+    nbins : int or list of int or dict
+        Number of mass bins defining the mass function.
+        See `masses.MassBins` for more information.
+        If list of int, must match number of components provided by
+        binning_breaks (which defaults to IMF.mb).
 
     FeH : float
         Metallicity, in solar fraction [Fe/H].
@@ -45,13 +44,19 @@ class EvolvedMF:
         Times, in years, at which to output PDMF. Defines the shape of many
         outputted attributes.
 
-    Ndot : float
-        Represents rate of change of the number of stars N over time, in stars
-        per Myr. Regulates low-mass object depletion (ejection) due to dynamical
-        evolution.
+    esc_rate : float or callable
+        Represents rate of change of stars over time due to tidal
+        ejections (and other escape mechanisms). Regulates low-mass object
+        depletion (ejection) due to dynamical evolution.
+        If a float, will apply a constant escape rate across all time. If a
+        callable, must take in a time `t` in Myr and output a (negative) float
+        representing the rate at that time.
+        Rates must be in units of stars per Myr if `esc_norm` is 'N' or solar
+        masses per Myr if `esc_norm` is 'M'.
 
-    N0 : int, optional
-        Total initial number of stars, over all bins. Defaults to 5e5 stars.
+    N0 : int or None, optional
+        Total initial number of stars, over all bins.
+        If None, uses the N0 of the given IMF class. Defaults to 5e5 stars.
 
     tcc : float, optional
         Core collapse time, in years. Defaults to 0, effectively being ignored.
@@ -70,23 +75,80 @@ class EvolvedMF:
         Whether to account for natal kicks in the BH dynamical retention.
         Defaults to False.
 
+    kick_method : {'maxwellian', 'sigmoid'}, optional
+        The BH natal kick algorithm to use, if `natal_kicks=True`.
+        See `kicks.natal_kicks` for more details.
+
     vesc : float, optional
         Initial cluster escape velocity, in km/s, for use in the computation of
         BH natal kick effects. Defaults to 90 km/s.
 
-    binning_method : {'default', 'split_log', 'split_linear'}, optional
-        The spacing method to use when constructing the mass bins.
-        See `masses.MassBins` for more information.
+    kick_vdisp : float, optional
+        The dispersion of the Maxwellian natal kick velocity distribution.
+        Only used if `kick_method='maxwellian'`.
+        See `kicks._maxwellian_retention_frac` for more information.
+
+    f_kick : float, optional
+        Unused.
+
+    kick_slope : float
+        The "slope" of the sigmoid retention function, defining the
+        "sharpness" of the increase. Only used if `kick_method='sigmoid'`.
+        See `kicks._sigmoid_retention_frac` for more information.
+
+    kick_scale : float
+        The scale-mass of the sigmoid retention function, defining the
+        approximate mass of the turn-over from 0 to 1.
+        Only used if `kick_method='sigmoid'`.
+        See `kicks._sigmoid_retention_frac` for more information.
+
+    stellar_evolution : bool, optional
+        Whether or not to include stellar evolution effects in the mass function
+        evolution. There is not much real sense in turning this off, but it can
+        be useful for testing escape rates on their own.
 
     md : float, optional
         Depletion mass, below which stars are preferentially disrupted during
         the stellar escape derivatives.
         The default 1.2 is based on Lamers et al. (2013) and shouldn't be
-        changed unless you know what you're doing.
+        changed unless you know what you're doing. Making this too large will
+        break assumptions made internally about BH dynamics.
+
+    esc_norm : {'N', 'M'}, optional
+        Defines whether the given `esc_rate` is to be given in stars or mass
+        per unit time. This affects the normalization of the escape derivatives.
+        Note that a constant :math:`\dot{N}` will give rise to an increasing
+        :math:`\dot{M}` over time, and vice versa, so the two options are not
+        directly interchangeable. Defaults to 'N'.
+
+    BH_IFMR_method : str, optional
+        The BH IFMR algorithm to use when determining BH masses.
+        See `ifmr` for more information.
+
+    WD_IFMR_method : str, optional
+        The WD IFMR algorithm to use when determining WD masses.
+        See `ifmr` for more information.
+
+    BH_IFMR_kwargs : dict, optional
+        All arguments passed to the BH IFMR algorithm. See the specified
+        functions in `ifmr` for information on all required methods.
+
+    WD_IFMR_kwargs : dict, optional
+        All arguments passed to the WD IFMR algorithm. See the specified
+        functions in `ifmr` for information on all required methods.
+
+    binning_breaks : list of float, optional
+        The binning break masses to use when constructing the mass bins,
+        including outer edges. See `masses.MassBins` for more information.
+        If nbins is a list of int, this list must be one longer (i.e. bound
+        all bins). By default, the break masses of the IMF will be used.
+
+    binning_method : {'default', 'split_log', 'split_linear'}, optional
+        The spacing method to use when constructing the mass bins.
+        See `masses.MassBins` for more information.
 
     Attributes
     ----------
-
     nbin : int
         Total number of bins (sum of nbins parameter).
 
@@ -94,8 +156,8 @@ class EvolvedMF:
         Total number of output times (len of tout parameter).
 
     alphas : ndarray
-        Array[nout, nbin] of  PDMF slopes. If Ndot = 0, this is defined entirely
-        by the IMF.
+        Array[nout, nbin] of  PDMF slopes. If esc_rate = 0, this is defined
+        entirely by the IMF.
 
     Ns : ndarray
         Array[nout, nbin] of the total number of (main sequence) stars in each
@@ -150,6 +212,17 @@ class EvolvedMF:
         Array of 2-character strings representing the object type of the
         corresponding bins of the M, N and m properties. "MS" = main sequence
         stars, "WD" = white dwarfs, "NS" = neutron stars, "BH" = black holes.
+
+    Notes
+    -----
+        The BH kicks and ejections are computed post facto on the BH mass
+        bins for each requested output age (`tout`). As such, parameters such
+        as `BH_ret_dyn` are applied equally at each age, and not accounted
+        for during the evolution, which may not be entirely realistic.
+        Care should be taken when examining the BHs at multiple ages.
+
+        If there is an evolution over time of `f_BH` you wish to match, see
+        `EvolvedMFWithBH` instead.
     '''
 
     @property
@@ -209,9 +282,15 @@ class EvolvedMF:
     def nmr(self):
         return (np.c_[self.Nr][-1] > 10 * self.Nmin).sum()
 
-    def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot,
-                 N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
-                 natal_kicks=False, vesc=90, binning_method='default', md=1.2):
+    def __init__(self, IMF, nbins, FeH, tout, esc_rate, N0=5e5,
+                 tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0, *,
+                 natal_kicks=False, kick_method='maxwellian',
+                 vesc=90, kick_vdisp=265., f_kick=None,
+                 kick_slope=1, kick_scale=20,
+                 stellar_evolution=True, md=1.2, esc_norm='N',
+                 BH_IFMR_method='banerjee20', WD_IFMR_method='mist18',
+                 BH_IFMR_kwargs=None, WD_IFMR_kwargs=None,
+                 binning_breaks=None, binning_method='default'):
 
         # ------------------------------------------------------------------
         # Set various other parameters
@@ -220,7 +299,19 @@ class EvolvedMF:
         # Supplied parameters
         self.tcc = tcc
         self.tout = np.atleast_1d(tout)
-        self.Ndot = Ndot
+
+        self.esc_rate = esc_rate
+        self._esc_norm = esc_norm
+        self._time_dep_esc = callable(esc_rate)
+
+        if not self._time_dep_esc and esc_rate > 0:
+            raise ValueError("'esc_rate' must be less than 0")
+
+        if esc_norm not in ('N', 'M'):
+            mssg = f"Invalid 'esc_norm' {esc_norm}, must be one of 'M', 'N'."
+            raise ValueError(mssg)
+
+        self._stellar_ev = stellar_evolution
 
         self.NS_ret = NS_ret
         self.BH_ret_int = BH_ret_int
@@ -229,11 +320,10 @@ class EvolvedMF:
 
         self.FeH = FeH
 
-        if Ndot > 0:
-            raise ValueError("'Ndot' must be less than 0")
-
         # Initial-Final mass relations
-        self.IFMR = IFMR(FeH)
+        self.IFMR = IFMR(FeH,
+                         WD_method=WD_IFMR_method, WD_kwargs=WD_IFMR_kwargs,
+                         BH_method=BH_IFMR_method, BH_kwargs=BH_IFMR_kwargs)
 
         # Minimum of stars to call a bin "empty"
         self.Nmin = 0.1
@@ -241,10 +331,16 @@ class EvolvedMF:
         self.md = md
 
         # ------------------------------------------------------------------
-        # Initialise the mass bins given the power-law IMF slopes and bins
+        # Initialise the initial mass function and mass bins given the
+        # power-law IMF slopes and bins
         # ------------------------------------------------------------------
 
-        self.massbins = MassBins(m_breaks, a_slopes, nbins, N0, self.IFMR,
+        self.IMF = IMF
+        self.N0 = N0
+
+        binning_breaks = IMF.mb if binning_breaks is None else binning_breaks
+
+        self.massbins = MassBins(binning_breaks, nbins, self.IMF, self.IFMR,
                                  binning_method=binning_method)
 
         # ------------------------------------------------------------------
@@ -275,16 +371,27 @@ class EvolvedMF:
         # Setup BH natal kicks
         # ------------------------------------------------------------------
 
-        self.vesc = vesc
         self.natal_kicks = natal_kicks
 
-        if self.natal_kicks:
+        match kick_method.casefold():
 
-            # load in the ifmr data to interpolate fb from mr
-            feh_path = get_data(f"sse/MP_FEH{self.IFMR.FeH_BH:+.2f}.dat")
+            case 'maxwellian' | 'f12' | 'fryer2012':
 
-            # load in the data
-            self.fb_grid = np.loadtxt(feh_path, usecols=(1, 3), unpack=True)
+                from .ifmr import _check_IFMR_FeH_bounds
+                FeH_BH = _check_IFMR_FeH_bounds(FeH)
+
+                self._kick_kw = dict(
+                    method=kick_method, f_kick=f_kick, vesc=vesc,
+                    FeH=FeH_BH, vdisp=kick_vdisp
+                )
+
+            case 'sigmoid':
+                self._kick_kw = dict(method=kick_method, f_kick=f_kick,
+                                     slope=kick_slope, scale=kick_scale)
+
+            case _:
+                mssg = f"Invalid natal kick algorithm '{kick_method=}'"
+                raise ValueError(mssg)
 
         # ------------------------------------------------------------------
         # Finally, evolve the population
@@ -294,6 +401,63 @@ class EvolvedMF:
         self.nstep = 0
 
         self._evolve()
+
+    @classmethod
+    def from_powerlaw(cls, m_breaks, a_slopes, nbins, FeH, tout, esc_rate,
+                      N0=5e5, *args, **kwargs):
+        '''Construct class based on a power-law IMF breaks and slopes, directly.
+
+        Alternative constructor to `EvolvedMF` based on explicitly providing the
+        power-law IMF slopes and break masses, rather than an already created
+        IMF object itself.
+        Simply creates a `PowerLawIMF` class based on these arguments and passes
+        it through to initialize the base class.
+
+        Parameters
+        ----------
+        m_breaks : list of float
+            Power law IMF break-masses (including outer bounds; size N+1).
+
+        a_slopes : list of float
+            Power law IMF slopes α (size N).
+
+        nbins : int or list of int or dict
+            Number of mass bins defining the mass function.
+            See `masses.MassBins` for more information.
+            If list of int, must match number of components provided by
+            binning_breaks (which defaults to m_breaks; size N).
+
+        FeH : float
+            Metallicity, in solar fraction [Fe/H].
+
+        tout : list of int
+            Times, in years, at which to output PDMF. Defines the shape of many
+            outputted attributes.
+
+        esc_rate : float or callable
+            Represents rate of change of stars over time due to tidal
+            ejections (and other escape mechanisms). Regulates low-mass object
+            depletion (ejection) due to dynamical evolution.
+            If a float, will apply a constant escape rate across all time. If a
+            callable, must take in a time `t` in Myr and output a (negative)
+            float representing the rate at that time.
+            Rates must be in units of stars per Myr if `esc_norm` is 'N' or
+            solar masses per Myr if `esc_norm` is 'M'.
+
+        N0 : int or None, optional
+            Total initial number of stars, over all bins.
+            If None, uses the N0 of the given IMF class. Defaults to 5e5 stars.
+
+        *args, **kwargs
+            All other arguments are passed to EvolvedMF.
+
+        Returns
+        -------
+        EvolvedMF
+            The created evolved MF object, using the created IMF.
+        '''
+        imf = PowerLawIMF(m_break=m_breaks, a=a_slopes, N0=N0, ext='zeros')
+        return cls(imf, nbins, FeH, tout, esc_rate, N0=N0, *args, **kwargs)
 
     def compute_tms(self, mi):
         '''Compute main-sequence lifetime for a given mass `mi`'''
@@ -340,10 +504,13 @@ class EvolvedMF:
         self.nstep += 1
 
         # Compute stellar evolution derivatives
-        derivs_sev = self._derivs_sev(t, y)
+        if self._stellar_ev:
+            derivs_sev = self._derivs_sev(t, y)
+        else:
+            derivs_sev = self.massbins.blanks(packed=True)
 
-        # Only run the dynamical star losses `derivs_esc` if Ndot is not zero
-        if self.Ndot < 0:
+        # Only run the dynamical star losses `derivs_esc` if escape is not zero
+        if self._time_dep_esc or self.esc_rate < 0:
             derivs_esc = self._derivs_esc(t, y)
         else:
             derivs_esc = np.zeros_like(derivs_sev)
@@ -417,29 +584,12 @@ class EvolvedMF:
     def _derivs_esc(self, t, y):
         '''Derivatives relevant to mass loss due to escaping low-mass stars'''
 
-        # nb = self.nbin
-        md, Ndot = self.md, self.Ndot
-
         # Pull out individual arrays from y
         Ns, alpha, Nr, Mr = self.massbins.unpack_values(y, grouped_rem=True)
         dNs, dalpha, dNr, dMr = self.massbins.blanks(packed=False,
                                                      grouped_rem=True)
 
-        # If core collapsed, use different, simpler, algorithm
-        if t < self.tcc:
-
-            N_sum = np.sum(Ns) + np.sum(np.r_[Nr])
-            dNs += Ndot * Ns / N_sum
-
-            for c in range(len(Nr)):  # Each remnant class
-                sel = Nr[c] > 0
-                mr = Mr[c][sel] / Nr[c][sel]
-                dNr[c][sel] += Ndot * Nr[c][sel] / N_sum
-                dMr[c][sel] += mr * Ndot * Nr[c][sel] / N_sum
-
-            return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
-
-        # Stellar Integrals
+        # Compute various required quantities
 
         mto = self.compute_mto(t)
 
@@ -449,8 +599,45 @@ class EvolvedMF:
         P15 = Pk(alpha, 1.5, *bins_MS)
         P2 = Pk(alpha, 2, *bins_MS)
 
+        # floating point check for *very* thin bins (i.e. when mto ~ bin edge)
+        finite_mask = ~np.isnan(P1)
+
+        md = self.md
         ms = P2 / P1
-        depl_mask = ms < md
+        Ms = Ns * ms
+
+        # Determine total loss rate (normalization)
+
+        esc_rate = self.esc_rate(t) if self._time_dep_esc else self.esc_rate
+
+        # If not core collapsed, use different, simpler, algorithm
+
+        if t < self.tcc:
+
+            if self._esc_norm == 'M':
+                M_sum = np.sum(Ms[finite_mask]) + np.sum(np.r_[Mr])
+                dNs += esc_rate * Ns / M_sum
+
+                for c in range(len(Nr)):  # Each remnant class
+                    sel = Nr[c] > 0
+                    dNr[c][sel] += esc_rate * Nr[c][sel] / M_sum
+                    dMr[c][sel] += esc_rate * Mr[c][sel] / M_sum
+
+            elif self._esc_norm == 'N':
+                N_sum = np.sum(Ns) + np.sum(np.r_[Nr])
+                dNs += esc_rate * Ns / N_sum
+
+                for c in range(len(Nr)):  # Each remnant class
+                    sel = Nr[c] > 0
+                    mr = Mr[c][sel] / Nr[c][sel]
+                    dNr[c][sel] += esc_rate * Nr[c][sel] / N_sum
+                    dMr[c][sel] += mr * esc_rate * Nr[c][sel] / N_sum
+
+            return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
+
+        # Stellar Integrals
+
+        depl_mask = (ms < md) & finite_mask
 
         Is = (Ns * (1 - md ** (-0.5) * (P15 / P1)))[depl_mask]
 
@@ -472,7 +659,19 @@ class EvolvedMF:
 
         # Normalization
 
-        B = Ndot / (np.sum(Is) + np.sum(np.r_[Ir]))
+        P25 = Pk(alpha, 2.5, *bins_MS)
+        Js = (Ms * (1 - md ** (-0.5) * (P25 / P2)))[depl_mask]
+
+        if self._esc_norm == 'M':
+            P25 = Pk(alpha, 2.5, *bins_MS)
+            Js = (Ms * (1 - md ** (-0.5) * (P25 / P2)))[depl_mask]
+            B = esc_rate / (np.sum(Js) + np.sum(np.r_[Jr]))
+
+        elif self._esc_norm == 'N':
+            B = esc_rate / (np.sum(Is) + np.sum(np.r_[Ir]))
+
+        else:
+            raise ValueError(f"Invalid 'esc_norm' {self._esc_norm}")
 
         # Derivatives
 
@@ -492,99 +691,6 @@ class EvolvedMF:
             dMr[c][rem_mask] += B * Jr[c][rem_mask]
 
         return self.massbins.pack_values(dNs, dalpha, *dNr, *dMr)
-
-    def _get_retention_frac(self, fb, vesc):
-        '''Compute BH natal-kick retention fraction'''
-
-        def _maxwellian(x, a):
-            norm = np.sqrt(2 / np.pi)
-            exponent = (x ** 2) * np.exp((-1 * (x ** 2)) / (2 * (a ** 2)))
-            return norm * exponent / a ** 3
-
-        if fb == 1.0:
-            return 1.0
-
-        # Integrate over the Maxwellian up to the escape velocity
-        v_space = np.linspace(0, 1000, 1000)
-
-        # TODO might be a quicker way to numerically integrate than a spline
-        retention = UnivariateSpline(
-            x=v_space,
-            y=_maxwellian(v_space, 265 * (1 - fb)),
-            s=0,
-            k=3,
-        ).integral(0, vesc)
-
-        return retention
-
-    def _natal_kick_BH(self, Mr_BH, Nr_BH):
-        '''Computes the effects of BH natal-kicks on the mass and number of BHs
-
-        Determines the effects of BH natal-kicks based on the fallback fraction
-        and escape velocity of this population.
-
-        Both input arrays are modified *in place*, as well as returned.
-
-        Parameters
-        ----------
-        Mr_BH : ndarray
-            Array[nbin] of the total initial masses of black holes in each
-            BH mass bin
-
-        Nr_BH : ndarray
-            Array[nbin] of the total initial numbers of black holes in each
-            BH mass bin
-
-        Returns
-        -------
-        Mr_BH : ndarray
-            Array[nbin] of the total final masses of black holes in each
-            BH mass bin, after natal kicks
-
-        Nr_BH : ndarray
-            Array[nbin] of the total final numbers of black holes in each
-            BH mass bin, after natal kicks
-
-        natal_ejecta : float
-            The total mass of BHs ejected through natal kicks
-        '''
-
-        natal_ejecta = 0.0
-
-        # Interpolate the mr-fb grid
-        fb_interp = interp1d(
-            self.fb_grid[0],
-            self.fb_grid[1],
-            kind="linear",
-            bounds_error=False,
-            fill_value=(0.0, 1.0),
-        )
-
-        for j in range(Mr_BH.size):
-
-            # Skip the bin if its empty
-            if Nr_BH[j] < self.Nmin:
-                continue
-
-            # Interpolate fallback fraction at this mr
-            fb = fb_interp(Mr_BH[j] / Nr_BH[j])
-
-            if fb == 1.0:
-                continue
-
-            else:
-
-                # Compute retention fraction
-                retention = self._get_retention_frac(fb, self.vesc)
-
-                # keep track of how much we eject
-                natal_ejecta += Mr_BH[j] * (1 - retention)
-
-                # eject the mass
-                Mr_BH[j] *= retention
-                Nr_BH[j] *= retention
-
-        return Mr_BH, Nr_BH, natal_ejecta
 
     def _dyn_eject_BH(self, Mr_BH, Nr_BH, *, M_eject=None):
         '''Determine and remove BHs, to represent dynamical ejections
@@ -623,23 +729,24 @@ class EvolvedMF:
             BH mass bin, after dynamical ejections
         '''
 
+        Mtot_0 = Mr_BH.sum()  # for error message
+
         # calculate total mass we want to eject
         if M_eject is None:
-            M_eject = Mr_BH.sum() * (1.0 - self.BH_ret_dyn)
+            M_eject = Mtot_0 * (1.0 - self.BH_ret_dyn)
+
+        M_eject_0 = M_eject  # for error message
 
         # Remove BH starting from Heavy to Light
         j = Mr_BH.size
 
-        while M_eject != 0:
+        while M_eject >= 0:
             j -= 1
 
             if j < 0:
-                mssg = 'Invalid `M_eject`, must be less than total Mr_BH'
+                mssg = (f'Invalid `{M_eject_0=}`, '
+                        f'must be less than total Mr_BH ({Mtot_0})')
                 raise ValueError(mssg)
-
-            # Skip empty bins
-            if Nr_BH[j] < self.Nmin:
-                continue
 
             # Removed entirety of this bin
             if Mr_BH[j] < M_eject:
@@ -686,7 +793,7 @@ class EvolvedMF:
         # ------------------------------------------------------------------
 
         t0 = 0.0
-        y0 = self.massbins.initial_values()
+        y0 = self.massbins.initial_values(N0=self.N0)
 
         sol = ode(self._derivs)
         sol.set_integrator("dopri5", max_step=1e12, atol=1e-5, rtol=1e-5)
@@ -717,7 +824,7 @@ class EvolvedMF:
                 # ----------------------------------------------------------
 
                 Ns, alpha, Nr, Mr = self.massbins.unpack_values(
-                    sol.y, grouped_rem=True
+                    sol.y.copy(), grouped_rem=True
                 )
 
                 bins_MS = self.massbins.turned_off_bins(self.compute_mto(ti))
@@ -738,14 +845,32 @@ class EvolvedMF:
 
                     # calculate total mass we want to eject
                     M_eject = Mr.BH.sum() * (1.0 - self.BH_ret_dyn)
+                    M_ret = Mr.BH.sum() - M_eject
 
-                    # First remove mass from all bins by natal kicks, if desired
-                    if self.natal_kicks:
-                        *_, kicked = self._natal_kick_BH(Mr.BH, Nr.BH)
-                        M_eject -= kicked
+                    # If kicking basically all, skip ahead
+                    if 0. <= M_ret / (Mr.BH[0] / Nr.BH[0]) < self.Nmin:
+                        Mr.BH[:] = 0
+                        Nr.BH[:] = 0
 
-                    # Remove dynamical BH ejections
-                    self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
+                    else:
+
+                        # First remove mass from all bins by natal kicks
+                        if self.natal_kicks:
+                            *_, kicked = kicks.natal_kicks(Mr.BH, Nr.BH,
+                                                           **self._kick_kw)
+                            M_eject -= kicked
+
+                        if M_eject < 0:
+                            mssg = (
+                                f"Natal kicks already removed {-M_eject} Msun "
+                                "more than total ejections desired by "
+                                f"'BH_ret_dyn={self.BH_ret_dyn}'. "
+                                "Increase BH_ret_dyn or alter natal kicks."
+                            )
+                            raise ValueError(mssg)
+
+                        # Remove dynamical BH ejections
+                        self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
 
                 # ----------------------------------------------------------
                 # save values into output arrays
@@ -773,6 +898,15 @@ class EvolvedMF:
 
                     self.mr[c][iout, :] = mr
 
+        Mtot = self.Ms.sum(axis=1) + np.c_[self.Mr].sum(axis=1)
+        Ntot = self.Ns.sum(axis=1) + np.c_[self.Nr].sum(axis=1)
+        self.mmean = Mtot / Ntot
+
+        self.converged = sol.successful()
+        if not self.converged:
+            mssg = "ODE solver has *not* converged, this MF will not be valid."
+            warnings.warn(mssg)
+
 
 class EvolvedMFWithBH(EvolvedMF):
     r'''Evolve an IMF to a present-day mass function at a given age and f_BH.
@@ -789,15 +923,15 @@ class EvolvedMFWithBH(EvolvedMF):
 
     Parameters
     ----------
-    m_breaks : list of float
-        IMF break-masses (including outer bounds; size N+1).
+    IMF : PowerLawIMF
+        Initial Mass Function (IMF) object, to be used to generate the initial
+        numbers of stars at time 0.
 
-    a_slopes : list of float
-        IMF slopes α (size N).
-
-    nbins : list of int
-        Number of mass bins in each regime of the IMF, as defined by m_breaks
-        (size N).
+    nbins : int or list of int or dict
+        Number of mass bins defining the mass function.
+        See `masses.MassBins` for more information.
+        If list of int, must match number of components provided by
+        binning_breaks (which defaults to IMF.mb).
 
     FeH : float
         Metallicity, in solar fraction [Fe/H].
@@ -806,15 +940,26 @@ class EvolvedMFWithBH(EvolvedMF):
         Times, in years, at which to output PDMF. Defines the shape of many
         outputted attributes.
 
-    Ndot : float
-        Represents rate of change of the number of stars N over time, in stars
-        per Myr. Regulates low-mass object depletion (ejection) due to dynamical
-        evolution.
+    esc_rate : float or callable
+        Represents rate of change of stars over time due to tidal
+        ejections (and other escape mechanisms). Regulates low-mass object
+        depletion (ejection) due to dynamical evolution.
+        If a float, will apply a constant escape rate across all time. If a
+        callable, must take in a time `t` in Myr and output a (negative) float
+        representing the rate at that time.
+        Rates must be in units of stars per Myr if `esc_norm` is 'N' or solar
+        masses per Myr if `esc_norm` is 'M'.
 
     f_BH : float
         The desired final BH mass fraction (0 to 1).
         If more than one output time is specified, a list of floats with size
         `nout` is required.
+
+    strict_BH_target : bool, optional
+        If True, will error when the amount of BHs formed and then lost through
+        natal kicks results in an f_BH less than the target final `f_BH`
+        (this would make `f_BH` unreachable by dynamical BH losses). If False,
+        the final `f_BH` may be smaller than requested.
 
     *args, **kwargs
         All remaining arguments are passed to `EvolvedMF`. Note that passing
@@ -831,8 +976,8 @@ class EvolvedMFWithBH(EvolvedMF):
     not recommended as bins with N < 1 are physically meaningless.
     '''
 
-    def __init__(self, m_breaks, a_slopes, nbins, FeH, tout, Ndot, f_BH,
-                 *args, **kwargs):
+    def __init__(self, IMF, nbins, FeH, tout, esc_rate, f_BH,
+                 *args, strict_BH_target=True, **kwargs):
 
         self._fBH_target = np.atleast_1d(f_BH)
 
@@ -844,9 +989,74 @@ class EvolvedMFWithBH(EvolvedMF):
             mssg = f"`f_BH` ({self._fBH_target}) must be greater than 0"
             raise ValueError(mssg)
 
+        self.strict_BH_target = strict_BH_target
+
         # leave BH_ret_dyn as default, will be ignored. BH_ret_int is fine
-        super().__init__(m_breaks, a_slopes, nbins, FeH, tout, Ndot,
+        super().__init__(IMF, nbins, FeH, tout, esc_rate,
                          *args, **kwargs)
+
+    @classmethod
+    def from_powerlaw(cls, m_breaks, a_slopes, nbins, FeH, tout, esc_rate, f_BH,
+                      N0=5e5, *args, **kwargs):
+        '''Construct class based on a power-law IMF breaks and slopes, directly.
+
+        Alternative constructor to `EvolvedMFWithBH` based on explicitly
+        providing the power-law IMF slopes and break masses, rather than an
+        already created IMF object itself.
+        Simply creates a `PowerLawIMF` class based on these arguments and passes
+        it through to initialize the base class.
+
+        Parameters
+        ----------
+        m_breaks : list of float
+            Power law IMF break-masses (including outer bounds; size N+1).
+
+        a_slopes : list of float
+            Power law IMF slopes α (size N).
+
+        nbins : int or list of int or dict
+            Number of mass bins defining the mass function.
+            See `masses.MassBins` for more information.
+            If list of int, must match number of components provided by
+            binning_breaks (which defaults to m_breaks; size N).
+
+        FeH : float
+            Metallicity, in solar fraction [Fe/H].
+
+        tout : list of int
+            Times, in years, at which to output PDMF. Defines the shape of many
+            outputted attributes.
+
+        esc_rate : float or callable
+            Represents rate of change of stars over time due to tidal
+            ejections (and other escape mechanisms). Regulates low-mass object
+            depletion (ejection) due to dynamical evolution.
+            If a float, will apply a constant escape rate across all time. If a
+            callable, must take in a time `t` in Myr and output a (negative)
+            float representing the rate at that time.
+            Rates must be in units of stars per Myr if `esc_norm` is 'N' or
+            solar masses per Myr if `esc_norm` is 'M'.
+
+        f_BH : float
+            The desired final BH mass fraction (0 to 1).
+            If more than one output time is specified, a list of floats with
+            size `nout` is required.
+
+        N0 : int or None, optional
+            Total initial number of stars, over all bins.
+            If None, uses the N0 of the given IMF class. Defaults to 5e5 stars.
+
+        *args, **kwargs
+            All other arguments are passed to EvolvedMF.
+
+        Returns
+        -------
+        EvolvedMFwithBH
+            The created evolved MF object, using the created IMF.
+        '''
+        imf = PowerLawIMF(m_break=m_breaks, a=a_slopes, N0=N0, ext='zeros')
+        return cls(imf, nbins, FeH, tout, esc_rate, f_BH, N0=N0,
+                   *args, **kwargs)
 
     def _dyn_eject_BH(self, Mr_BH, Nr_BH, Mtot, fBH_target):
         '''Determine and remove BHs, to represent dynamical ejections.
@@ -902,10 +1112,6 @@ class EvolvedMFWithBH(EvolvedMF):
         while (fBH_target < (fBH_current := MBH / Mtot)) and (j >= 0):
             j -= 1
 
-            # Skip empty bins
-            if Nr_BH[j] < self.Nmin:
-                continue
-
             # Removed entirety of this bin
             if ((MBH - Mr_BH[j]) / (Mtot - Mr_BH[j])) >= fBH_target:
 
@@ -958,7 +1164,7 @@ class EvolvedMFWithBH(EvolvedMF):
         # ------------------------------------------------------------------
 
         t0 = 0.0
-        y0 = self.massbins.initial_values()
+        y0 = self.massbins.initial_values(N0=self.N0)
 
         sol = ode(self._derivs)
         sol.set_integrator("dopri5", max_step=1e12, atol=1e-5, rtol=1e-5)
@@ -989,7 +1195,7 @@ class EvolvedMFWithBH(EvolvedMF):
                 # ----------------------------------------------------------
 
                 Ns, alpha, Nr, Mr = self.massbins.unpack_values(
-                    sol.y, grouped_rem=True
+                    sol.y.copy(), grouped_rem=True
                 )
 
                 bins_MS = self.massbins.turned_off_bins(self.compute_mto(ti))
@@ -1010,7 +1216,7 @@ class EvolvedMFWithBH(EvolvedMF):
                     #  Do it first because we dont control the exact amount so
                     #  this could make the target fBH invalid afterwards
                     if self.natal_kicks:
-                        self._natal_kick_BH(Mr.BH, Nr.BH)  # do it all in-place
+                        kicks.natal_kicks(Mr.BH, Nr.BH, **self._kick_kw)
 
                     Mtot = np.r_[Mr].sum() + Ms.sum()
                     Mbhtot = Mr.BH.sum()
@@ -1022,9 +1228,15 @@ class EvolvedMFWithBH(EvolvedMF):
                             f"Target `f_BH` ({fBH_target}) is greater than "
                             f"f_BH formed at t={ti:.1f} ({fBH_current:.3f}; "
                             f"after natal kicks). Reduce `f_BH`, alter IMF "
-                            f"slopes or turn off natal kicks."
+                            f"slopes or turn off / alter natal kicks."
                         )
-                        raise ValueError(mssg)
+                        if self.strict_BH_target:
+                            raise ValueError(mssg)
+                        else:
+                            # Will pass harmlessly through _dyn_eject_BH
+                            mssg += (" Proceeding anyways due to "
+                                     "`strict_BH_target=False`.")
+                            warnings.warn(mssg)
 
                     # Remove dynamical BH ejections
                     #   (note different signature to EvolvedMF)
@@ -1060,6 +1272,15 @@ class EvolvedMFWithBH(EvolvedMF):
 
                     self.mr[c][iout, :] = mr
 
+        Mtot = self.Ms.sum(axis=1) + np.c_[self.Mr].sum(axis=1)
+        Ntot = self.Ns.sum(axis=1) + np.c_[self.Nr].sum(axis=1)
+        self.mmean = Mtot / Ntot
+
+        self.converged = sol.successful()
+        if not self.converged:
+            mssg = "ODE solver has *not* converged, this MF will not be valid."
+            warnings.warn(mssg)
+
 
 class InitialBHPopulation:
     '''Generate an initial population of black holes from a mass function.
@@ -1090,7 +1311,7 @@ class InitialBHPopulation:
     Mtot, Ntot : float
         The total mass and amount of BHs in the entire population.
 
-    bins : mbin
+    bins : masses.mbin
         The BH mass bin edges.
 
     age : float
@@ -1105,9 +1326,6 @@ class InitialBHPopulation:
 
     # TODO add unit tests
 
-    _natal_kick_BH = EvolvedMF._natal_kick_BH
-    _get_retention_frac = EvolvedMF._get_retention_frac
-
     age = None
     Ms_lost = None
     Ns_lost = None
@@ -1116,27 +1334,38 @@ class InitialBHPopulation:
         '''The total mass fraction in BHs, given a total population mass.'''
         return self.Mtot / M_cluster
 
-    def __init__(self, M_BH, N_BH, BH_bins, FeH, *, vesc=90., natal_kicks=True):
+    def __init__(self, M_BH, N_BH, BH_bins, FeH, *,
+                 natal_kicks=False, kick_method='maxwellian', f_kick=None,
+                 vesc=90, kick_vdisp=265., kick_slope=1, kick_scale=20):
         '''Should not init from this, use provided classmethods.'''
-
-        # ------------------------------------------------------------------
-        # Attributes needed for stolen natal kick functions from `EvolvedMF`
-        # ------------------------------------------------------------------
-
-        self.Nmin = 0.1
-        self.vesc = vesc
 
         # ------------------------------------------------------------------
         # Optionally perform all natal kicks on the input mass arrays
         # ------------------------------------------------------------------
 
         if natal_kicks:
-            # load in the ifmr data to interpolate fb from mr
-            feh_path = get_data(f"sse/MP_FEH{IFMR(FeH).FeH_BH:+.2f}.dat")
-            self.fb_grid = np.loadtxt(feh_path, usecols=(1, 3), unpack=True)
 
-            # Do the natal kicks, in place
-            self._natal_kick_BH(M_BH, N_BH)
+            self.natal_kicks = natal_kicks
+
+            match kick_method.casefold():
+
+                case 'maxwellian' | 'f12' | 'fryer2012':
+
+                    from .ifmr import _check_IFMR_FeH_bounds
+                    FeH_BH = _check_IFMR_FeH_bounds(FeH)
+
+                    kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
+                                   FeH=FeH_BH, vdisp=kick_vdisp)
+
+                case 'sigmoid':
+                    kick_kw = dict(method=kick_method, f_kick=f_kick,
+                                   slope=kick_slope, scale=kick_scale)
+
+                case _:
+                    mssg = f"Invalid natal kick algorithm '{kick_method=}'"
+                    raise ValueError(mssg)
+
+            *_, self._kicked_M = kicks.natal_kicks(M_BH, N_BH, **kick_kw)
 
         # ------------------------------------------------------------------
         # Compute and store all final BH mass and number arrays and values
@@ -1160,8 +1389,10 @@ class InitialBHPopulation:
     # ----------------------------------------------------------------------
 
     @classmethod
-    def from_IMF(cls, m_breaks, a_slopes, nbins, FeH, N0=5e5, *,
-                 natal_kicks=True, vesc=90., binning_method='default'):
+    def from_IMF(cls, IMF, nbins, FeH, N0=5e5, *, natal_kicks=True,
+                 binning_breaks=None, binning_method='default',
+                 BH_IFMR_method='banerjee20', WD_IFMR_method='mist18',
+                 BH_IFMR_kwargs=None, WD_IFMR_kwargs=None, **kwargs):
         '''Initialize a BH population by evolving from an IMF.
 
         Based on a given IMF, sharing many arguments with `EvolvedMF`, generate
@@ -1174,21 +1405,22 @@ class InitialBHPopulation:
 
         Parameters
         ----------
-        m_breaks : list of float
-            IMF break-masses (including outer bounds; size N+1).
+        IMF : PowerLawIMF
+            Initial Mass Function (IMF) object, to be used to generate the
+            initial numbers of stars at time 0.
 
-        a_slopes : list of float
-            IMF slopes α (size N).
-
-        nbins : list of int
-            Number of mass bins in each regime of the IMF, as defined by
-            m_breaks (size N).
+        nbins : int or list of int or dict
+            Number of mass bins defining the mass function.
+            See `masses.MassBins` for more information.
+            If list of int, must match number of components provided by
+            binning_breaks (which defaults to IMF.mb).
 
         FeH : float
             Metallicity, in solar fraction [Fe/H].
 
         N0 : int, optional
-            Total initial number of stars, over all bins. Defaults to 5e5 stars.
+            Total initial number of stars, over all bins.
+            If None, uses the N0 of the given IMF class. Defaults to 5e5 stars.
 
         natal_kicks : bool, optional
             Whether to account for natal kicks in the BH dynamical retention.
@@ -1198,9 +1430,34 @@ class InitialBHPopulation:
             Initial cluster escape velocity, in km/s, for use in the
             computation of BH natal kick effects. Defaults to 90 km/s.
 
+        binning_breaks : list of float, optional
+            The binning break masses to use when constructing the mass bins,
+            including outer edges. See `masses.MassBins` for more information.
+            If nbins is a list of int, this list must be one longer (i.e. bound
+            all bins). By default, the break masses of the IMF will be used.
+
         binning_method : {'default', 'split_log', 'split_linear'}, optional
             The spacing method to use when constructing the mass bins.
             See `masses.MassBins` for more information.
+
+        BH_IFMR_method : str, optional
+            The BH IFMR algorithm to use when determining BH masses.
+            See `ifmr` for more information.
+
+        WD_IFMR_method : str, optional
+            The WD IFMR algorithm to use when determining WD masses.
+            See `ifmr` for more information.
+
+        BH_IFMR_kwargs : dict, optional
+            All arguments passed to the BH IFMR algorithm. See the specified
+            functions in `ifmr` for information on all required methods.
+
+        WD_IFMR_kwargs : dict, optional
+            All arguments passed to the WD IFMR algorithm. See the specified
+            functions in `ifmr` for information on all required methods.
+
+        kwargs : dict, optional
+            All other arguments are passed to the `InitialBHPopulation`.
         '''
 
         def compute_tms(mi):
@@ -1241,10 +1498,10 @@ class InitialBHPopulation:
 
                     # The normalization constant
                     # TODO deal with the constant divide-by-zero warning here
-                    Aj = Nj / Pk(a_slopes[-1], 1, m1, mto)
+                    Aj = Nj / Pk(IMF.a[-1], 1, m1, mto)
 
                     # Get the number of turn-off stars per unit of mass
-                    dNdm = Aj * mto ** a_slopes[-1]
+                    dNdm = Aj * mto**IMF.a[-1]
 
                 else:
                     dNdm = 0
@@ -1263,8 +1520,14 @@ class InitialBHPopulation:
                 # Skip 0-mass remnants
                 if t <= final_age and (m_rem := _ifmr.predict(mto)) > 0:
 
+                    # If this happens its because IFMR is (numerically) broken!
+                    if (cls_rem := _ifmr.predict_type(mto)) != 'BH':
+                        mssg = f"Initial mass {mto} made a {cls_rem}, not a BH."
+                        raise RuntimeError(mssg)
+
                     # Find bin based on lower bin edge (must be careful later)
-                    irem = np.flatnonzero(massbins.bins.BH.lower <= m_rem)[-1]
+
+                    irem = massbins.determine_index(m_rem, cls_rem)
 
                     # Fill in remnant derivatives
                     dNr[irem] = -dNdt * frem
@@ -1273,12 +1536,16 @@ class InitialBHPopulation:
             return np.r_[dNs, dNr, dMr]
 
         # ------------------------------------------------------------------
-        # Setup mass bins and initial values, based on the IMF
+        # Initialise the initial mass function and mass bins given the
+        # power-law IMF slopes and bins
         # ------------------------------------------------------------------
 
-        _ifmr = IFMR(FeH)
+        _ifmr = IFMR(FeH, WD_method=WD_IFMR_method, WD_kwargs=WD_IFMR_kwargs,
+                     BH_method=BH_IFMR_method, BH_kwargs=BH_IFMR_kwargs)
 
-        massbins = MassBins(m_breaks, a_slopes, nbins, N0, _ifmr,
+        binning_breaks = IMF.mb if binning_breaks is None else binning_breaks
+
+        massbins = MassBins(binning_breaks, nbins, IMF, _ifmr,
                             binning_method=binning_method)
 
         nbin_MS, nbin_BH = massbins.nbin.MS, massbins.nbin.BH
@@ -1291,7 +1558,7 @@ class InitialBHPopulation:
         # Compute t_ms for all bin edges
         tms_u = compute_tms(massbins.bins.MS.upper)
 
-        init_N, init_M = massbins.initial_values(packed=False)
+        init_N, init_M = massbins.initial_values(packed=False, N0=N0)
 
         # ------------------------------------------------------------------
         # Integrate and solve the derivatives (evolve)
@@ -1321,13 +1588,15 @@ class InitialBHPopulation:
         # ------------------------------------------------------------------
 
         out = cls(M_BH, N_BH, massbins.bins.BH,
-                  FeH=FeH, natal_kicks=natal_kicks, vesc=vesc)
+                  FeH=FeH, natal_kicks=natal_kicks, **kwargs)
+
+        out.IMF = IMF
 
         out.age = final_age
 
         Ns = sol.y[:nbin_MS]
 
-        alphas = np.repeat(massbins.a, massbins._nbin_MS_each)
+        alphas = np.repeat(IMF.a, massbins._nbin_MS_each)
         As = Ns / Pk(alphas, 1, *massbins.bins.MS)
         Ms = As * Pk(alphas, 2, *massbins.bins.MS)
 
@@ -1338,8 +1607,72 @@ class InitialBHPopulation:
         return out
 
     @classmethod
+    def from_powerlaw(cls, m_breaks, a_slopes, nbins, FeH, N0=5e5, *,
+                      natal_kicks=True,
+                      binning_breaks=None, binning_method='default', **kwargs):
+        '''Initialize a BH population by evolving from IMF breaks and slopes.
+
+        Alternative constructor to `InitialBHPopulation.from_IMF` based on
+        explicitly providing the power-law IMF slopes and break masses,
+        rather than an already created IMF object itself.
+        Simply creates a `PowerLawIMF` class based on these arguments and
+        passes it through to `from_IMF`. See this method for more details.
+
+        Parameters
+        ----------
+        m_breaks : list of float
+            Power law IMF break-masses (including outer bounds; size N+1).
+
+        a_slopes : list of float
+            Power law IMF slopes α (size N).
+
+        nbins : int or list of int or dict
+            Number of mass bins defining the mass function.
+            See `masses.MassBins` for more information.
+            If list of int, must match number of components provided by
+            binning_breaks (which defaults to m_breaks; size N).
+
+        FeH : float
+            Metallicity, in solar fraction [Fe/H].
+
+        N0 : int, optional
+            Total initial number of stars, over all bins.
+            If None, uses the N0 of the given IMF class. Defaults to 5e5 stars.
+
+        natal_kicks : bool, optional
+            Whether to account for natal kicks in the BH dynamical retention.
+            Defaults to True (note this difference from `EvolvedMF`).
+
+        vesc : float, optional
+            Initial cluster escape velocity, in km/s, for use in the
+            computation of BH natal kick effects. Defaults to 90 km/s.
+
+        binning_breaks : list of float, optional
+            The binning break masses to use when constructing the mass bins,
+            including outer edges. See `masses.MassBins` for more information.
+            If nbins is a list of int, this list must be one longer (i.e. bound
+            all bins). By default, the break masses of the IMF will be used.
+
+        binning_method : {'default', 'split_log', 'split_linear'}, optional
+            The spacing method to use when constructing the mass bins.
+            See `masses.MassBins` for more information.
+
+        kwargs : dict, optional
+            All other arguments are passed to the
+            `InitialBHPopulation.from_IMF` constructor.
+        '''
+
+        imf = PowerLawIMF(m_break=m_breaks, a=a_slopes, N0=N0, ext='zeros')
+
+        return cls.from_IMF(imf, nbins, FeH, N0=N0, natal_kicks=natal_kicks,
+                            binning_breaks=binning_breaks,
+                            binning_method=binning_method, **kwargs)
+
+    @classmethod
     def from_BHMF(cls, m_breaks, a_slopes, nbins, FeH, N0=1000, *,
-                  natal_kicks=True, vesc=90.):
+                  natal_kicks=True, binning_method='default',
+                  BH_IFMR_method='banerjee20', WD_IFMR_method='mist18',
+                  BH_IFMR_kwargs=None, WD_IFMR_kwargs=None, **kwargs):
         '''Initialize a BH population based on a given power-law mass function.
 
         Based on an explicit given power-law parametrization of a BH mass
@@ -1352,11 +1685,10 @@ class InitialBHPopulation:
         Parameters
         ----------
         m_breaks : list of float
-            IMF break-masses (including outer bounds; size 2 or 3).
+            IMF break-masses (including outer bounds; size N+1).
 
         a_slopes : list of float
-            IMF slopes α. Supports either a single or broken (i.e. double)
-            power law (size 1 or 2).
+            IMF slopes α. Supports any number of power law components (size N).
 
         nbins : int or list of int
             Number of mass bins in each regime of the given MF, as defined by
@@ -1379,59 +1711,36 @@ class InitialBHPopulation:
         binning_method : {'default', 'split_log', 'split_linear'}, optional
             The spacing method to use when constructing the mass bins.
             See `masses.MassBins` for more information.
+
+        BH_IFMR_method : str, optional
+            The BH IFMR algorithm to use when determining BH masses.
+            See `ifmr` for more information.
+
+        WD_IFMR_method : str, optional
+            The WD IFMR algorithm to use when determining WD masses.
+            See `ifmr` for more information.
+
+        BH_IFMR_kwargs : dict, optional
+            All arguments passed to the BH IFMR algorithm. See the specified
+            functions in `ifmr` for information on all required methods.
+
+        WD_IFMR_kwargs : dict, optional
+            All arguments passed to the WD IFMR algorithm. See the specified
+            functions in `ifmr` for information on all required methods.
+
+        kwargs : dict, optional
+            All other arguments are passed to the `InitialBHPopulation`.
         '''
 
-        a, mb = a_slopes, m_breaks
+        MF = PowerLawIMF(m_breaks, a_slopes, N0=N0)
 
-        # ------------------------------------------------------------------
-        # Compute the BH bin boundaries, based on the degree of the power law
-        # ------------------------------------------------------------------
+        _ifmr = IFMR(FeH, WD_method=WD_IFMR_method, WD_kwargs=WD_IFMR_kwargs,
+                     BH_method=BH_IFMR_method, BH_kwargs=BH_IFMR_kwargs)
 
-        if len(a) == 2:
+        bins = MassBins(m_breaks, nbins, imf=MF, ifmr=_ifmr,
+                        binning_method=binning_method).bins.MS
 
-            if isinstance(nbins, int):
-                from .masses import _divide_bin_sizes
-                nbins = _divide_bin_sizes(nbins, 2)
-
-            A2 = (
-                Pk(a[1], 1, mb[1], mb[2])
-                + (mb[1] ** (a[1] - a[0]) * Pk(a[0], 1, mb[0], mb[1]))
-            )**(-1)
-
-            A1 = A2 * mb[1]**(a[1] - a[0])
-
-            A = N0 * np.repeat([A1, A2], nbins)
-
-            bin_sides = np.r_[
-                np.geomspace(mb[0], mb[1], nbins[0] + 1),
-                np.geomspace(mb[1], mb[2], nbins[1] + 1)[1:]
-            ]
-
-        elif len(a) == 1:
-
-            A1 = Pk(a[0], 1, mb[0], mb[1])**(-1)
-
-            A = N0 * np.repeat([A1], nbins)
-
-            bin_sides = np.geomspace(mb[0], mb[1], nbins + 1)
-
-        else:
-            # TODO there's no real reason to restrict this honestly
-            mssg = "`from_BHMF` only supports one or two component power laws"
-            raise ValueError(mssg)
-
-        bins = mbin(bin_sides[:-1], bin_sides[1:])
-
-        # ------------------------------------------------------------------
-        # Compute the number and mass of BHs in each bin
-        # ------------------------------------------------------------------
-
-        # Expand array of IMF slopes to all mass bins
-        alpha = np.repeat(a, nbins)
-
-        # Set initial star bins based on IMF
-        N_BH = A * Pk(alpha, 1, *bins)
-        M_BH = A * Pk(alpha, 2, *bins)
+        N_BH, M_BH, _ = MF.binned_eval(bins)
 
         return cls(M_BH, N_BH, bins, FeH=FeH,
-                   natal_kicks=natal_kicks, vesc=vesc)
+                   natal_kicks=natal_kicks, **kwargs)
