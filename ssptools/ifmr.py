@@ -626,7 +626,8 @@ class IFMR:
 
         # If outside boundaries of the IFMR, warn user
         if np.any((m_in <= self.WD_mi[0]) | (m_in > self.BH_mi[1])):
-            mssg = ("input mass exceeds IFMR grid, resulting mass is "
+            mssg = (f"input mass {m_in=} exceeds IFMR grid "
+                    f"({self.WD_mi[0]}, {self.BH_mi[1]}), resulting mass is "
                     "extrapolated and may be very incorrect")
             logging.warning(mssg)
 
