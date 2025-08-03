@@ -117,6 +117,42 @@ def _sigmoid_retention_frac(m, slope, scale):
     return erf(np.exp(slope * (m - scale)))
 
 
+def _tanh_retention_frac(m, slope, scale):
+    r'''Retention fraction alg. based on a paramatrized function of tanh.
+
+    This method is based on a simple parametrization of the relationship
+    between the retention fraction and the BH mass as a sigmoid function,
+    namely the hyperbolic tangent, increasing smoothly between 0 and 1
+    and reaching 50% at the given scale mass.
+
+   .. math::
+        f_{\mathrm{ret}}(m) = \frac{1}{2} \tanh\left(
+            \mathrm{slope}\ (m - \mathrm{scale}) - 1
+        \right)
+
+    Parameters
+    ----------
+    m : float
+        The mean mass of a BH bin.
+
+    slope : float
+        The "slope" of the sigmoid function, defining the "sharpness" of the
+        increase. A value of 0 is completely flat (at 50% for all masses), an
+        increasingly positive value approaches a step function at the scale
+        mass, and a negative value will retain more low-mass bins than high.
+
+    scale : float
+        The scale-mass of the sigmoid function, defining the approximate mass
+        of the turn-over from 0 to 1. By definition, f_ret(m=scale)=0.5.
+
+    Returns
+    -------
+    float
+        The retention fraction of BHs of this mass.
+    '''
+    return np.tanh(np.exp(slope * (m - scale)))
+
+
 def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
     '''
     Natal kicks without a modulating total mass to eject, just ejecting
@@ -214,6 +250,9 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
 
         case 'sigmoid':
             f_ret = _sigmoid_retention_frac
+
+        case 'tanh':
+            f_ret = _tanh_retention_frac
 
         case 'maxwellian' | 'f12' | 'fryer2012':
             f_ret = _maxwellian_retention_frac
