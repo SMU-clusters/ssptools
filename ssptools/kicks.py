@@ -11,8 +11,7 @@ import scipy.interpolate as interp
 __all__ = ["natal_kicks"]
 
 
-def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000, *,
-                               SNe_method='rapid'):
+def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
     '''Retention fraction alg. based on a Maxwellian kick velocity distribution.
 
     This method is based on the assumption that the natal kick velocity is
@@ -21,7 +20,8 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000, *,
 
     The fraction of black holes retained in each mass bin is then found by
     integrating the kick velocity distribution from 0 to the estimated initial
-    system escape velocity.
+    system escape velocity. In other words, by evaluating the CDF at the
+    escape velocity.
 
     Parameters
     ----------
@@ -35,10 +35,6 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000, *,
         The dispersion of the Maxwellian kick velocity distribution. Defaults
         to 265 km/s, as typically used for neutron stars.
 
-    vmax : float, optional
-        The maximum velocity bound of the Maxwellian distribution.
-        As long as it's well above the escape velocity, this is not important.
-
     SNe_method : {'rapid', 'delayed'}, optional
         Whether to use the "rapid" (default) or "delayed" supernovae
         prescriptions described by Fryer+2012 to determine the fallback
@@ -49,34 +45,20 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000, *,
     float
         The retention fraction of BHs of this mass.
 
-    Notes
-    -----
-    This function is *not* currently vectorized, and each mass must be
-    given as an individual float, in contrast to other kick methods.
     '''
 
-    def _maxwellian(x, a):
+    def _maxwellian_cdf(x, a):
         norm = np.sqrt(2 / np.pi)
-        exponent = (x ** 2) * np.exp((-1 * (x ** 2)) / (2 * (a ** 2)))
-        return norm * exponent / a ** 3
+        err = erf(x / (np.sqrt(2) * a))
+        exponent = np.exp(-(x**2) / (2 * (a**2)))
+        return err - (norm * (x / a) * exponent)
 
     fb = _F12_fallback_frac(FeH, SNe_method=SNe_method)(m)
 
-    if fb >= 1.0:  # TODO breaks on m is array
-        return 1.0
+    # clip fb just to avoid divide by 0 errors
+    scale = vdisp * (1 - np.clip(fb, 0.0, 1 - 1e-16))
 
-    # Integrate over the Maxwellian up to the escape velocity
-    v_space = np.linspace(0, vmax, 1000)
-
-    # TODO might be a quicker way to numerically integrate than a spline
-    retention = interp.UnivariateSpline(
-        x=v_space,
-        y=_maxwellian(v_space, vdisp * (1 - fb)),
-        s=0,
-        k=3,
-    ).integral(0, vesc)
-
-    return retention
+    return _maxwellian_cdf(vesc, scale)
 
 
 def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
