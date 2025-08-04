@@ -19,18 +19,28 @@ class TestRetentionAlgorithms:
     @pytest.mark.parametrize('FeH', [-2., -0.5, 0.3])
     @pytest.mark.parametrize('vesc', [25., 100., 200.])
     @pytest.mark.parametrize('m', [0.01, 0.5, 1.0, 10.0, 100., 150.])
-    def test_maxwellian_retention_frac(self, m, vesc, FeH, vdisp):
+    @pytest.mark.parametrize('SNe_method', ['rapid', 'delayed', 'none'])
+    def test_maxwellian_retention_frac(self, m, vesc, FeH, vdisp, SNe_method):
 
         def maxwellian(x):
             a = vdisp * (1 - fb)
             exponent = (x ** 2) * np.exp((-1 * (x ** 2)) / (2 * (a ** 2)))
             return np.sqrt(2 / np.pi) * exponent / a ** 3
 
-        fb = kicks._F12_fallback_frac(FeH)(m)  # TODO need test for this func
+        if SNe_method == 'rapid':
+            # TODO need test for fb func
+            fb = kicks._F12_fallback_frac(FeH, SNe_method='rapid')(m)
+
+        elif SNe_method == 'delayed':
+            fb = kicks._F12_fallback_frac(FeH, SNe_method='delayed')(m)
+
+        elif SNe_method == 'none':
+            fb = 0.0
 
         expected = 1.0 if fb >= 1.0 else integ.quad(maxwellian, 0, vesc)[0]
 
-        fret = kicks._maxwellian_retention_frac(m, vesc, FeH, vdisp)
+        fret = kicks._maxwellian_retention_frac(m, vesc, FeH, vdisp,
+                                                SNe_method=SNe_method)
 
         assert fret == pytest.approx(expected, rel=5e-3)
 
