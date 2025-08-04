@@ -35,10 +35,11 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
         The dispersion of the Maxwellian kick velocity distribution. Defaults
         to 265 km/s, as typically used for neutron stars.
 
-    SNe_method : {'rapid', 'delayed'}, optional
+    SNe_method : {'rapid', 'delayed', None}, optional
         Whether to use the "rapid" (default) or "delayed" supernovae
         prescriptions described by Fryer+2012 to determine the fallback
         fraction as a function of the black hole mass.
+        If None, no fallback will be applied, and all masses will use `vdisp`.
 
     Returns
     -------
@@ -53,10 +54,25 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
         exponent = np.exp(-(x**2) / (2 * (a**2)))
         return err - (norm * (x / a) * exponent)
 
-    fb = _F12_fallback_frac(FeH, SNe_method=SNe_method)(m)
+    match SNe_method.casefold():
 
-    # clip fb just to avoid divide by 0 errors
-    scale = vdisp * (1 - np.clip(fb, 0.0, 1 - 1e-16))
+        case 'rapid' | 'delayed':
+
+            # clip fb just below 1, to avoid divide by 0 errors
+            fb = np.clip(
+                _F12_fallback_frac(FeH, SNe_method=SNe_method)(m),
+                0.0, 1 - 1e-16
+            )
+
+        case None | 'none':
+
+            fb = 0.
+
+        case _:
+
+            raise ValueError(f"Invalid SNe method '{SNe_method}'.")
+
+    scale = vdisp * (1 - fb)
 
     return _maxwellian_cdf(vesc, scale)
 
@@ -79,6 +95,11 @@ def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
     # Interpolate the mr-fb grid
     return interp.interp1d(fb_grid[0], fb_grid[1], kind="linear",
                            bounds_error=False, fill_value=(0.0, 1.0))
+
+
+def _flat_fallback_frac(frac):
+    '''Give a constant fallback fraction for all masses, at `frac`.'''
+    return lambda m: frac
 
 
 def _sigmoid_retention_frac(m, slope, scale):
