@@ -207,6 +207,44 @@ def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
     return Mr_BH, Nr_BH, stats
 
 
+def _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_target, slope, scale=10.):
+    '''
+    Use a root finding algorithm to determine the value of `scale` needed in
+    order to eject a total fraction of the given BHs `f_target`, using the
+    given `f_ret` function to distribute the kicks among mass bins.
+    Note that while it says "params", right now can only compute the scale.
+    '''
+    import scipy.optimize as opt
+
+    c = Nr_BH > 0.1
+
+    m_BH = Mr_BH[c] / Nr_BH[c]
+    M_BH_tot = Mr_BH.sum()
+
+    f_ini = Mr_BH[c] / M_BH_tot
+
+    # f_ret = _tanh_retention_frac
+
+    # Keep first guess on optionally given scale
+    scale = scale if scale is not None else 10.0
+
+    def target_fret(scl):
+
+        retention =  f_ret(m_BH, scale=scl, slope=slope)
+
+        f_BH_final = (f_ini * (1 - retention)).sum(axis=0)
+
+        return f_target - f_BH_final
+
+    sol = opt.root_scalar(target_fret, x0=scale, bracket=(-25, 75))
+
+    root_scale = sol.root
+
+    if not sol.converged:
+        raise RuntimeError(f"root finder didn't converge on {f_target=}: {sol}")
+
+    return slope, root_scale
+
 
 def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
     r'''Computes the effects of BH natal-kicks on the mass and number of BHs
@@ -239,11 +277,11 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
     ----------
     Mr_BH : ndarray
         Array[nbin] of the total initial masses of black holes in each
-        BH mass bin
+        BH mass bin.
 
     Nr_BH : ndarray
         Array[nbin] of the total initial numbers of black holes in each
-        BH mass bin
+        BH mass bin.
 
     f_kick : float, optional
         Unused.
@@ -259,19 +297,20 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
     -------
     Mr_BH : ndarray
         Array[nbin] of the total final masses of black holes in each
-        BH mass bin, after natal kicks
+        BH mass bin, after natal kicks.
 
     Nr_BH : ndarray
         Array[nbin] of the total final numbers of black holes in each
-        BH mass bin, after natal kicks
+        BH mass bin, after natal kicks.
 
-    natal_ejecta : float
-        The total mass of BHs ejected through natal kicks
+    stats : KickStats
+        Statistics on how and how many BHs are kicked.
 
     See Also
     --------
     _maxwellian_retention_frac : Maxwellian retention fraction algorithm.
     _sigmoid_retention_frac : Sigmoid retention fraction algorithm.
+    _tanh_retention_frac : Hyperbolic tangent retention fraction algorithm.
     '''
 
     match method.casefold():
@@ -285,6 +324,9 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
         case 'maxwellian' | 'f12' | 'fryer2012':
             f_ret = _maxwellian_retention_frac
 
+            if f_kick is not None:
+                raise ValueError(f"Cannot used 'f_kick' with {method}")
+
         case _:
             raise ValueError(f"Invalid kick distribution method: {method}")
 
@@ -293,5 +335,10 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
         return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs)
 
     else:
-        # Not really possible to distribute cleanly, maybe just abandon
-        raise NotImplementedError
+
+        # Fit for the desired kick scale
+        slp, scl = _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_kick,
+                                          **ret_kwargs)
+
+        # Compute the natal kicks based on fit scale
+        return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, slope=slp, scale=scl)
