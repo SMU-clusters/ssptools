@@ -3,12 +3,22 @@
 
 from .ifmr import get_data
 
+import dataclasses
+
 import numpy as np
 from scipy.special import erf
 import scipy.interpolate as interp
 
 
 __all__ = ["natal_kicks"]
+
+
+@dataclasses.dataclass
+class KickStats:
+    retention : np.ndarray
+    mass_kicked : np.ndarray
+    total_kicked : float
+    parameters : dict
 
 
 def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
@@ -189,7 +199,13 @@ def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
     Mr_BH[c] *= retention
     Nr_BH[c] *= retention
 
-    return Mr_BH, Nr_BH, natal_ejecta
+    stats = KickStats(
+        retention=retention, mass_kicked=natal_ejecta,
+        total_kicked=natal_ejecta.sum(), parameters=ret_kwargs
+    )
+
+    return Mr_BH, Nr_BH, stats
+
 
 
 def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):

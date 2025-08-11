@@ -391,7 +391,7 @@ class EvolvedMF:
                     FeH=FeH_BH, vdisp=kick_vdisp, SNe_method=SNe_method
                 )
 
-            case 'sigmoid':
+            case 'sigmoid' | 'tanh':
                 self._kick_kw = dict(method=kick_method, f_kick=f_kick,
                                      slope=kick_slope, scale=kick_scale)
 
@@ -862,9 +862,10 @@ class EvolvedMF:
 
                         # First remove mass from all bins by natal kicks
                         if self.natal_kicks:
-                            *_, kicked = kicks.natal_kicks(Mr.BH, Nr.BH,
-                                                           **self._kick_kw)
-                            M_eject -= kicked
+                            *_, self._kick_stats = kicks.natal_kicks(
+                                Mr.BH, Nr.BH, **self._kick_kw
+                            )
+                            M_eject -= self._kick_stats.total_kicked
 
                         if M_eject < 0:
                             mssg = (
@@ -1222,7 +1223,9 @@ class EvolvedMFWithBH(EvolvedMF):
                     #  Do it first because we dont control the exact amount so
                     #  this could make the target fBH invalid afterwards
                     if self.natal_kicks:
-                        kicks.natal_kicks(Mr.BH, Nr.BH, **self._kick_kw)
+                        *_, self._kick_stats = kicks.natal_kicks(
+                            Mr.BH, Nr.BH, **self._kick_kw
+                        )
 
                     Mtot = np.r_[Mr].sum() + Ms.sum()
                     Mbhtot = Mr.BH.sum()
@@ -1365,7 +1368,7 @@ class InitialBHPopulation:
                                    FeH=FeH_BH, vdisp=kick_vdisp,
                                    SNe_method=SNe_method)
 
-                case 'sigmoid':
+                case 'sigmoid' | 'tanh':
                     kick_kw = dict(method=kick_method, f_kick=f_kick,
                                    slope=kick_slope, scale=kick_scale)
 
@@ -1373,7 +1376,7 @@ class InitialBHPopulation:
                     mssg = f"Invalid natal kick algorithm '{kick_method=}'"
                     raise ValueError(mssg)
 
-            *_, self._kicked_M = kicks.natal_kicks(M_BH, N_BH, **kick_kw)
+            *_, self._kick_stats = kicks.natal_kicks(M_BH, N_BH, **kick_kw)
 
         # ------------------------------------------------------------------
         # Compute and store all final BH mass and number arrays and values
