@@ -175,28 +175,18 @@ def _tanh_retention_frac(m, slope, scale):
 
 
 def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
-    '''
-    Natal kicks without a modulating total mass to eject, just ejecting
-    all mass in each bin based on the retention fraction
-    M_BH,f = M_BH,i * fret(mj)
-    '''
-    natal_ejecta = 0.0
 
-    for j in range(Mr_BH.size):
+    c = Nr_BH > 0.1
+    mr_BH = Mr_BH[c] / Nr_BH[c]
+    natal_ejecta = np.zeros_like(Mr_BH)
 
-        # Skip the bin if its empty
-        if Nr_BH[j] < 0.1:
-            continue
+    retention = f_ret(mr_BH, **ret_kwargs)
 
-        # Compute retention fraction
-        retention = f_ret(Mr_BH[j] / Nr_BH[j], **ret_kwargs)
+    # keep track of how much we eject
+    natal_ejecta[c] = Mr_BH[c] * (1 - retention)
 
-        # keep track of how much we eject
-        natal_ejecta += Mr_BH[j] * (1 - retention)
-
-        # eject the mass
-        Mr_BH[j] *= retention
-        Nr_BH[j] *= retention
+    Mr_BH[c] *= retention
+    Nr_BH[c] *= retention
 
     return Mr_BH, Nr_BH, natal_ejecta
 
