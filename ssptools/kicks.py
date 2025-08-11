@@ -66,7 +66,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
 
         case None | 'none':
 
-            fb = 0.
+            fb = np.zeros_like(m)
 
         case _:
 
@@ -147,8 +147,8 @@ def _tanh_retention_frac(m, slope, scale):
     and reaching 50% at the given scale mass.
 
    .. math::
-        f_{\mathrm{ret}}(m) = \frac{1}{2} \tanh\left(
-            \mathrm{slope}\ (m - \mathrm{scale}) - 1
+        f_{\mathrm{ret}}(m) = \frac{1}{2} \left(
+            \tanh\left(\mathrm{slope}\ (m - \mathrm{scale})\right) + 1
         \right)
 
     Parameters
@@ -171,7 +171,8 @@ def _tanh_retention_frac(m, slope, scale):
     float
         The retention fraction of BHs of this mass.
     '''
-    return np.tanh(np.exp(slope * (m - scale)))
+    return 0.5 * (np.tanh(slope * (m - scale)) + 1)
+    # return np.tanh(np.exp(slope * (m - scale)))  # alternative
 
 
 def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
