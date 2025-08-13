@@ -238,7 +238,12 @@ def _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_target, slope, scale=10.):
 
         return f_target - f_BH_final
 
-    sol = opt.root_scalar(target_fret, x0=scale, bracket=(-25, 75))
+    try:
+        sol = opt.root_scalar(target_fret, x0=scale, bracket=(-25, 75))
+    except ValueError as err:
+        mssg = ("Root finder failed to find scale parameter matching target "
+                f"{f_target}. 'f_target' or 'slope' need to be adjusted.")
+        raise ValueError(mssg) from err
 
     root_scale = sol.root
 
@@ -261,9 +266,6 @@ def _get_kick_method(method):
 
         case 'maxwellian' | 'f12' | 'fryer2012':
             f_ret = _maxwellian_retention_frac
-
-            if f_kick is not None:
-                raise ValueError(f"Cannot used 'f_kick' with {method}")
 
         case _:
             raise ValueError(f"Invalid kick distribution method: {method}")
@@ -347,8 +349,13 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
     else:
 
         # Fit for the desired kick scale
-        slp, scl = _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_kick,
-                                          **ret_kwargs)
+        try:
+            slp, scl = _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_kick,
+                                              **ret_kwargs)
+        except TypeError as err:
+            mssg = (f"Can only use `f_kick` with methods that use a `scale` and"
+                    f" `slope` parameter, not '{method}'.")
+            raise ValueError(mssg) from err
 
         # Compute the natal kicks based on fit scale
         return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, slope=slp, scale=scl)
