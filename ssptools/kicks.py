@@ -21,6 +21,7 @@ class KickStats:
     parameters : dict
 
 
+# TODO there are currently no checks on input parameters to any fret function.
 def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
     '''Retention fraction alg. based on a Maxwellian kick velocity distribution.
 
@@ -190,14 +191,15 @@ def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
     c = Nr_BH > 0.1
     mr_BH = Mr_BH[c] / Nr_BH[c]
     natal_ejecta = np.zeros_like(Mr_BH)
+    retention = np.full_like(Mr_BH, np.nan)
 
-    retention = f_ret(mr_BH, **ret_kwargs)
+    retention[c] = f_ret(mr_BH, **ret_kwargs)
 
     # keep track of how much we eject
-    natal_ejecta[c] = Mr_BH[c] * (1 - retention)
+    natal_ejecta[c] = Mr_BH[c] * (1 - retention[c])
 
-    Mr_BH[c] *= retention
-    Nr_BH[c] *= retention
+    Mr_BH[c] *= retention[c]
+    Nr_BH[c] *= retention[c]
 
     stats = KickStats(
         retention=retention, mass_kicked=natal_ejecta,
@@ -244,6 +246,29 @@ def _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_target, slope, scale=10.):
         raise RuntimeError(f"root finder didn't converge on {f_target=}: {sol}")
 
     return slope, root_scale
+
+
+def _get_kick_method(method):
+    '''parse method to get the kick ret function (func to avoid repetition)'''
+
+    match method.casefold():
+
+        case 'sigmoid':
+            f_ret = _sigmoid_retention_frac
+
+        case 'tanh':
+            f_ret = _tanh_retention_frac
+
+        case 'maxwellian' | 'f12' | 'fryer2012':
+            f_ret = _maxwellian_retention_frac
+
+            if f_kick is not None:
+                raise ValueError(f"Cannot used 'f_kick' with {method}")
+
+        case _:
+            raise ValueError(f"Invalid kick distribution method: {method}")
+
+    return f_ret
 
 
 def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
@@ -313,22 +338,7 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
     _tanh_retention_frac : Hyperbolic tangent retention fraction algorithm.
     '''
 
-    match method.casefold():
-
-        case 'sigmoid':
-            f_ret = _sigmoid_retention_frac
-
-        case 'tanh':
-            f_ret = _tanh_retention_frac
-
-        case 'maxwellian' | 'f12' | 'fryer2012':
-            f_ret = _maxwellian_retention_frac
-
-            if f_kick is not None:
-                raise ValueError(f"Cannot used 'f_kick' with {method}")
-
-        case _:
-            raise ValueError(f"Invalid kick distribution method: {method}")
+    f_ret = _get_kick_method(method)
 
     # If no given total kick fraction, use old-style of directly using f_ret
     if f_kick is None:

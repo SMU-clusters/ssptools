@@ -855,6 +855,7 @@ class EvolvedMF:
 
                     # If kicking basically all, skip ahead
                     if 0. <= M_ret / (Mr.BH[0] / Nr.BH[0]) < self.Nmin:
+                        # TODO kick stats aren't stored when this is done
                         Mr.BH[:] = 0
                         Nr.BH[:] = 0
 
