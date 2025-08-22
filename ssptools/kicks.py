@@ -10,7 +10,7 @@ from scipy.special import erf
 import scipy.interpolate as interp
 
 
-__all__ = ["natal_kicks"]
+__all__ = ["natal_kicks", "KickStats"]
 
 
 @dataclasses.dataclass
