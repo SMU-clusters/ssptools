@@ -15,10 +15,10 @@ __all__ = ["natal_kicks", "KickStats"]
 
 @dataclasses.dataclass
 class KickStats:
-    retention : np.ndarray
-    mass_kicked : np.ndarray
-    total_kicked : float
-    parameters : dict
+    retention: np.ndarray
+    mass_kicked: np.ndarray
+    total_kicked: float
+    parameters: dict
 
 
 # TODO there are currently no checks on input parameters to any fret function.
@@ -46,10 +46,12 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
         The dispersion of the Maxwellian kick velocity distribution. Defaults
         to 265 km/s, as typically used for neutron stars.
 
-    SNe_method : {'rapid', 'delayed', None}, optional
-        Whether to use the "rapid" (default) or "delayed" supernovae
-        prescriptions described by Fryer+2012 to determine the fallback
-        fraction as a function of the black hole mass.
+    SNe_method : {'rapid', 'delayed', 'NS', None}, optional
+        Which method to use to determine the fallback fraction as a function of
+        the black hole mass, which scales the dispersion as σ(1-fb).
+        Available methods include the "rapid" (default) or "delayed" supernovae
+        prescriptions described by Fryer+2012, or the ratio of the neutron star
+        to black hole mass.
         If None, no fallback will be applied, and all masses will use `vdisp`.
 
     Returns
@@ -75,6 +77,10 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
                 0.0, 1 - 1e-16
             )
 
+        case 'ns' | 'neutron' | 'neutron star':
+
+            fb = _NS_reduced_kick(m_NS=1.4)(m)
+
         case None | 'none':
 
             fb = np.zeros_like(m)
@@ -83,7 +89,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
 
             raise ValueError(f"Invalid SNe method '{SNe_method}'.")
 
-    scale = vdisp * (1 - fb)
+    scale = vdisp * (1. - fb)
 
     return _maxwellian_cdf(vesc, scale)
 
@@ -92,7 +98,7 @@ def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
     '''Get the fallback fraction for this mass, interpolated from SSE models
     based on the prescription from Fryer 2012.
     Note there are no checks on FeH here, so make sure it's within the grid.
-    
+
     SNe_method must be one of rapid or delayed.
     '''
 
@@ -106,6 +112,11 @@ def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
     # Interpolate the mr-fb grid
     return interp.interp1d(fb_grid[0], fb_grid[1], kind="linear",
                            bounds_error=False, fill_value=(0.0, 1.0))
+
+
+def _NS_reduced_kick(m_NS=1.4):
+    '''Reduce σ by scaling the mass based on the neutron star mass.'''
+    return lambda m: 1. + (m_NS / m)
 
 
 def _flat_fallback_frac(frac):
@@ -232,7 +243,7 @@ def _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_target, slope, scale=10.):
 
     def target_fret(scl):
 
-        retention =  f_ret(m_BH, scale=scl, slope=slope)
+        retention = f_ret(m_BH, scale=scl, slope=slope)
 
         f_BH_final = (f_ini * (1 - retention)).sum(axis=0)
 
