@@ -79,7 +79,11 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
 
         case 'ns' | 'neutron' | 'neutron star':
 
-            fb = _NS_reduced_kick(m_NS=1.4)(m)
+            fb = 1. - _NS_reduced_kick(m_NS=1.4)(m)
+
+        case 'neutrino' | 'neutrino-driven':
+
+            fb = 1. - _neutrino_driven_kick(m_eff=7.0)(m)
 
         case None | 'none':
 
@@ -115,8 +119,13 @@ def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
 
 
 def _NS_reduced_kick(m_NS=1.4):
-    '''Reduce σ by scaling the mass based on the neutron star mass.'''
-    return lambda m: 1. + (m_NS / m)
+    '''Reduce σ by scaling the final BH mass based on the neutron star mass.'''
+    return lambda m: m_NS / m
+
+
+def _neutrino_driven_kick(m_eff=7.0):
+    '''Kicks produced by asymmetric neutrino emission.'''
+    return lambda m: np.min([np.full_like(m, m_eff), m], axis=0) / m
 
 
 def _flat_fallback_frac(frac):
