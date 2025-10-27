@@ -122,7 +122,7 @@ class StellarEvMassLoss:
         # dmavg/dt = d/dt(Mast/Nast), use quotient rule to handle all cases
         dmavgdt = ((N * dMdt) - (M * dNdt)) / (N**2)
 
-        return dMdt, dNdt, dmavgdt
+        return np.array([dMdt, dNdt, dmavgdt])
 
     @classmethod
     def from_powerlaw(cls, m_breaks, a_slopes, N0, FeH):
@@ -257,4 +257,4 @@ class LuminousEvMassLoss(StellarEvMassLoss):
         # dmavg/dt = d/dt(Mast/Nast), use quotient rule to handle all cases
         dmavgdt = ((Nast * dMastdt) - (Mast * dNastdt)) / (Nast**2)
 
-        return dMastdt, dNastdt, dmavgdt
+        return np.array([dMastdt, dNastdt, dmavgdt])
