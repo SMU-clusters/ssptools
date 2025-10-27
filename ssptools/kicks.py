@@ -287,6 +287,12 @@ def _get_kick_method(method):
         case 'maxwellian' | 'f12' | 'fryer2012':
             f_ret = _maxwellian_retention_frac
 
+        case 'full' | 'everything' | 'all':
+            f_ret = _flat_fallback_frac(0.0)
+
+        case 'none':
+            f_ret = _flat_fallback_frac(1.0)
+
         case _:
             raise ValueError(f"Invalid kick distribution method: {method}")
 
