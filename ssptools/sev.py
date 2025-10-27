@@ -153,6 +153,49 @@ class StellarEvMassLoss:
         imf = PowerLawIMF(m_break=m_breaks, a=a_slopes, N0=N0, ext='zeros')
         return cls(imf, FeH)
 
+    def solve(self, times=None, rtol=1e-6, **kwargs):
+        '''Solve the derivatives.
+
+        Solves the derivatives computed here using `solve_ivp`, in order to
+        obtain the total mass, number and mean mass themselves as a function of
+        time.
+
+        The intial values for `y_0` will be taken from `self.imf`.
+
+        Parameters
+        ----------
+        times : ndarray of float
+            The times, in Myrs, at which to output the computed solution.
+            Must be sorted already, and must have size > 1 as it will be used to
+            determine the span of the domain as well. By default, 1000 linearly
+            spaced values between 0 and 13 Gyr will be used.
+
+        **kwargs
+            All other arguments will be passed to `solve_ivp`.
+
+        Returns
+        -------
+        sol : scipy.integrate.OdeResult
+            Bunch object containing the outputs from `solve_ivp`. The
+            columns of `sol.y` correspond to [mass, number, mean mass].
+        '''
+        import scipy.integrate as integ
+
+        if times is None:
+            times = np.linspace(0., 13000, 1000)
+
+        times = np.atleast_1d(times)
+
+        if times.size < 2:
+            raise ValueError("'times' must have size > 2.")
+
+        t_span = times[[0, -1]]
+
+        y0 = [self.imf.Mtot, self.imf.N0, self.imf.mmean]
+
+        return integ.solve_ivp(self, t_span, y0=y0,
+                               t_eval=times, rtol=rtol, **kwargs)
+
 
 class LuminousEvMassLoss(StellarEvMassLoss):
     '''Compute the impacts of stellar evolution over time on all non-BH objects.
