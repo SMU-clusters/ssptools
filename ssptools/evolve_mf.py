@@ -79,6 +79,12 @@ class EvolvedMF:
         The BH natal kick algorithm to use, if `natal_kicks=True`.
         See `kicks.natal_kicks` for more details.
 
+    SNe_method : {'rapid', 'delayed', None}, optional
+        Which supernovae prescription to use to determine the fallback fraction.
+        See `kicks._maxwellian_retention_frac` for more information.
+        Note that the `BH_IFMR_method` should likely be changed in concert with
+        this.
+
     vesc : float, optional
         Initial cluster escape velocity, in km/s, for use in the computation of
         BH natal kick effects. Defaults to 90 km/s.
@@ -285,7 +291,7 @@ class EvolvedMF:
     def __init__(self, IMF, nbins, FeH, tout, esc_rate, N0=5e5,
                  tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0, *,
                  natal_kicks=False, kick_method='maxwellian',
-                 vesc=90, kick_vdisp=265., f_kick=None,
+                 SNe_method='rapid', vesc=90, kick_vdisp=265., f_kick=None,
                  kick_slope=1, kick_scale=20,
                  stellar_evolution=True, md=1.2, esc_norm='N',
                  BH_IFMR_method='banerjee20', WD_IFMR_method='mist18',
@@ -382,10 +388,10 @@ class EvolvedMF:
 
                 self._kick_kw = dict(
                     method=kick_method, f_kick=f_kick, vesc=vesc,
-                    FeH=FeH_BH, vdisp=kick_vdisp
+                    FeH=FeH_BH, vdisp=kick_vdisp, SNe_method=SNe_method
                 )
 
-            case 'sigmoid':
+            case 'sigmoid' | 'tanh':
                 self._kick_kw = dict(method=kick_method, f_kick=f_kick,
                                      slope=kick_slope, scale=kick_scale)
 
@@ -510,7 +516,7 @@ class EvolvedMF:
             derivs_sev = self.massbins.blanks(packed=True)
 
         # Only run the dynamical star losses `derivs_esc` if escape is not zero
-        if self._time_dep_esc or self.esc_rate < 0:
+        if self._time_dep_esc or self.esc_rate <= 0:
             derivs_esc = self._derivs_esc(t, y)
         else:
             derivs_esc = np.zeros_like(derivs_sev)
@@ -849,16 +855,24 @@ class EvolvedMF:
 
                     # If kicking basically all, skip ahead
                     if 0. <= M_ret / (Mr.BH[0] / Nr.BH[0]) < self.Nmin:
+
                         Mr.BH[:] = 0
                         Nr.BH[:] = 0
+
+                        self._kick_stats = kicks.KickStats(
+                            retention=np.zeros_like(Mr.BH),
+                            mass_kicked=Mr.BH.copy(), total_kicked=M_eject,
+                            parameters=self._kick_kw
+                        )
 
                     else:
 
                         # First remove mass from all bins by natal kicks
                         if self.natal_kicks:
-                            *_, kicked = kicks.natal_kicks(Mr.BH, Nr.BH,
-                                                           **self._kick_kw)
-                            M_eject -= kicked
+                            *_, self._kick_stats = kicks.natal_kicks(
+                                Mr.BH, Nr.BH, **self._kick_kw
+                            )
+                            M_eject -= self._kick_stats.total_kicked
 
                         if M_eject < 0:
                             mssg = (
@@ -1216,7 +1230,9 @@ class EvolvedMFWithBH(EvolvedMF):
                     #  Do it first because we dont control the exact amount so
                     #  this could make the target fBH invalid afterwards
                     if self.natal_kicks:
-                        kicks.natal_kicks(Mr.BH, Nr.BH, **self._kick_kw)
+                        *_, self._kick_stats = kicks.natal_kicks(
+                            Mr.BH, Nr.BH, **self._kick_kw
+                        )
 
                     Mtot = np.r_[Mr].sum() + Ms.sum()
                     Mbhtot = Mr.BH.sum()
@@ -1336,7 +1352,8 @@ class InitialBHPopulation:
 
     def __init__(self, M_BH, N_BH, BH_bins, FeH, *,
                  natal_kicks=False, kick_method='maxwellian', f_kick=None,
-                 vesc=90, kick_vdisp=265., kick_slope=1, kick_scale=20):
+                 SNe_method='rapid', vesc=90, kick_vdisp=265.,
+                 kick_slope=1, kick_scale=20):
         '''Should not init from this, use provided classmethods.'''
 
         # ------------------------------------------------------------------
@@ -1355,9 +1372,10 @@ class InitialBHPopulation:
                     FeH_BH = _check_IFMR_FeH_bounds(FeH)
 
                     kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
-                                   FeH=FeH_BH, vdisp=kick_vdisp)
+                                   FeH=FeH_BH, vdisp=kick_vdisp,
+                                   SNe_method=SNe_method)
 
-                case 'sigmoid':
+                case 'sigmoid' | 'tanh':
                     kick_kw = dict(method=kick_method, f_kick=f_kick,
                                    slope=kick_slope, scale=kick_scale)
 
@@ -1365,7 +1383,7 @@ class InitialBHPopulation:
                     mssg = f"Invalid natal kick algorithm '{kick_method=}'"
                     raise ValueError(mssg)
 
-            *_, self._kicked_M = kicks.natal_kicks(M_BH, N_BH, **kick_kw)
+            *_, self._kick_stats = kicks.natal_kicks(M_BH, N_BH, **kick_kw)
 
         # ------------------------------------------------------------------
         # Compute and store all final BH mass and number arrays and values

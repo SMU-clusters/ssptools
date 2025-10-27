@@ -3,16 +3,26 @@
 
 from .ifmr import get_data
 
+import dataclasses
+
 import numpy as np
 from scipy.special import erf
 import scipy.interpolate as interp
 
 
-__all__ = ["natal_kicks"]
+__all__ = ["natal_kicks", "KickStats"]
 
 
-def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000, *,
-                               SNe_method='rapid'):
+@dataclasses.dataclass
+class KickStats:
+    retention: np.ndarray
+    mass_kicked: np.ndarray
+    total_kicked: float
+    parameters: dict
+
+
+# TODO there are currently no checks on input parameters to any fret function.
+def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
     '''Retention fraction alg. based on a Maxwellian kick velocity distribution.
 
     This method is based on the assumption that the natal kick velocity is
@@ -21,7 +31,8 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000, *,
 
     The fraction of black holes retained in each mass bin is then found by
     integrating the kick velocity distribution from 0 to the estimated initial
-    system escape velocity.
+    system escape velocity. In other words, by evaluating the CDF at the
+    escape velocity.
 
     Parameters
     ----------
@@ -35,55 +46,63 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., vmax=1000, *,
         The dispersion of the Maxwellian kick velocity distribution. Defaults
         to 265 km/s, as typically used for neutron stars.
 
-    vmax : float, optional
-        The maximum velocity bound of the Maxwellian distribution.
-        As long as it's well above the escape velocity, this is not important.
-
-    SNe_method : {'rapid', 'delayed'}, optional
-        Whether to use the "rapid" (default) or "delayed" supernovae
-        prescriptions described by Fryer+2012 to determine the fallback
-        fraction as a function of the black hole mass.
+    SNe_method : {'rapid', 'delayed', 'NS', None}, optional
+        Which method to use to determine the fallback fraction as a function of
+        the black hole mass, which scales the dispersion as σ(1-fb).
+        Available methods include the "rapid" (default) or "delayed" supernovae
+        prescriptions described by Fryer+2012, or the ratio of the neutron star
+        to black hole mass.
+        If None, no fallback will be applied, and all masses will use `vdisp`.
 
     Returns
     -------
     float
         The retention fraction of BHs of this mass.
 
-    Notes
-    -----
-    This function is *not* currently vectorized, and each mass must be
-    given as an individual float, in contrast to other kick methods.
     '''
 
-    def _maxwellian(x, a):
+    def _maxwellian_cdf(x, a):
         norm = np.sqrt(2 / np.pi)
-        exponent = (x ** 2) * np.exp((-1 * (x ** 2)) / (2 * (a ** 2)))
-        return norm * exponent / a ** 3
+        err = erf(x / (np.sqrt(2) * a))
+        exponent = np.exp(-(x**2) / (2 * (a**2)))
+        return err - (norm * (x / a) * exponent)
 
-    fb = _F12_fallback_frac(FeH, SNe_method=SNe_method)(m)
+    match SNe_method.casefold():
 
-    if fb >= 1.0:  # TODO breaks on m is array
-        return 1.0
+        case 'rapid' | 'delayed':
 
-    # Integrate over the Maxwellian up to the escape velocity
-    v_space = np.linspace(0, vmax, 1000)
+            # clip fb just below 1, to avoid divide by 0 errors
+            fb = np.clip(
+                _F12_fallback_frac(FeH, SNe_method=SNe_method)(m),
+                0.0, 1 - 1e-16
+            )
 
-    # TODO might be a quicker way to numerically integrate than a spline
-    retention = interp.UnivariateSpline(
-        x=v_space,
-        y=_maxwellian(v_space, vdisp * (1 - fb)),
-        s=0,
-        k=3,
-    ).integral(0, vesc)
+        case 'ns' | 'neutron' | 'neutron star':
 
-    return retention
+            fb = 1. - _NS_reduced_kick(m_NS=1.4)(m)
+
+        case 'neutrino' | 'neutrino-driven':
+
+            fb = 1. - _neutrino_driven_kick(m_eff=7.0)(m)
+
+        case None | 'none':
+
+            fb = np.zeros_like(m)
+
+        case _:
+
+            raise ValueError(f"Invalid SNe method '{SNe_method}'.")
+
+    scale = vdisp * (1. - fb)
+
+    return _maxwellian_cdf(vesc, scale)
 
 
 def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
     '''Get the fallback fraction for this mass, interpolated from SSE models
     based on the prescription from Fryer 2012.
     Note there are no checks on FeH here, so make sure it's within the grid.
-    
+
     SNe_method must be one of rapid or delayed.
     '''
 
@@ -97,6 +116,21 @@ def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
     # Interpolate the mr-fb grid
     return interp.interp1d(fb_grid[0], fb_grid[1], kind="linear",
                            bounds_error=False, fill_value=(0.0, 1.0))
+
+
+def _NS_reduced_kick(m_NS=1.4):
+    '''Reduce σ by scaling the final BH mass based on the neutron star mass.'''
+    return lambda m: m_NS / m
+
+
+def _neutrino_driven_kick(m_eff=7.0):
+    '''Kicks produced by asymmetric neutrino emission.'''
+    return lambda m: np.min([np.full_like(m, m_eff), m], axis=0) / m
+
+
+def _flat_fallback_frac(frac):
+    '''Give a constant fallback fraction for all masses, at `frac`.'''
+    return lambda m: frac
 
 
 def _sigmoid_retention_frac(m, slope, scale):
@@ -135,31 +169,134 @@ def _sigmoid_retention_frac(m, slope, scale):
     return erf(np.exp(slope * (m - scale)))
 
 
+def _tanh_retention_frac(m, slope, scale):
+    r'''Retention fraction alg. based on a paramatrized function of tanh.
+
+    This method is based on a simple parametrization of the relationship
+    between the retention fraction and the BH mass as a sigmoid function,
+    namely the hyperbolic tangent, increasing smoothly between 0 and 1
+    and reaching 50% at the given scale mass.
+
+   .. math::
+        f_{\mathrm{ret}}(m) = \frac{1}{2} \left(
+            \tanh\left(\mathrm{slope}\ (m - \mathrm{scale})\right) + 1
+        \right)
+
+    Parameters
+    ----------
+    m : float
+        The mean mass of a BH bin.
+
+    slope : float
+        The "slope" of the sigmoid function, defining the "sharpness" of the
+        increase. A value of 0 is completely flat (at 50% for all masses), an
+        increasingly positive value approaches a step function at the scale
+        mass, and a negative value will retain more low-mass bins than high.
+
+    scale : float
+        The scale-mass of the sigmoid function, defining the approximate mass
+        of the turn-over from 0 to 1. By definition, f_ret(m=scale)=0.5.
+
+    Returns
+    -------
+    float
+        The retention fraction of BHs of this mass.
+    '''
+    return 0.5 * (np.tanh(slope * (m - scale)) + 1)
+    # return np.tanh(np.exp(slope * (m - scale)))  # alternative
+
+
 def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
+
+    c = Nr_BH > 0.1
+    mr_BH = Mr_BH[c] / Nr_BH[c]
+    natal_ejecta = np.zeros_like(Mr_BH)
+    retention = np.full_like(Mr_BH, np.nan)
+
+    retention[c] = f_ret(mr_BH, **ret_kwargs)
+
+    # keep track of how much we eject
+    natal_ejecta[c] = Mr_BH[c] * (1 - retention[c])
+
+    Mr_BH[c] *= retention[c]
+    Nr_BH[c] *= retention[c]
+
+    stats = KickStats(
+        retention=retention, mass_kicked=natal_ejecta,
+        total_kicked=natal_ejecta.sum(), parameters=ret_kwargs
+    )
+
+    return Mr_BH, Nr_BH, stats
+
+
+def _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_target, slope, scale=10.):
     '''
-    Natal kicks without a modulating total mass to eject, just ejecting
-    all mass in each bin based on the retention fraction
-    M_BH,f = M_BH,i * fret(mj)
+    Use a root finding algorithm to determine the value of `scale` needed in
+    order to eject a total fraction of the given BHs `f_target`, using the
+    given `f_ret` function to distribute the kicks among mass bins.
+    Note that while it says "params", right now can only compute the scale.
     '''
-    natal_ejecta = 0.0
+    import scipy.optimize as opt
 
-    for j in range(Mr_BH.size):
+    c = Nr_BH > 0.1
 
-        # Skip the bin if its empty
-        if Nr_BH[j] < 0.1:
-            continue
+    m_BH = Mr_BH[c] / Nr_BH[c]
+    M_BH_tot = Mr_BH.sum()
 
-        # Compute retention fraction
-        retention = f_ret(Mr_BH[j] / Nr_BH[j], **ret_kwargs)
+    f_ini = Mr_BH[c] / M_BH_tot
 
-        # keep track of how much we eject
-        natal_ejecta += Mr_BH[j] * (1 - retention)
+    # f_ret = _tanh_retention_frac
 
-        # eject the mass
-        Mr_BH[j] *= retention
-        Nr_BH[j] *= retention
+    # Keep first guess on optionally given scale
+    scale = scale if scale is not None else 10.0
 
-    return Mr_BH, Nr_BH, natal_ejecta
+    def target_fret(scl):
+
+        retention = f_ret(m_BH, scale=scl, slope=slope)
+
+        f_BH_final = (f_ini * (1 - retention)).sum(axis=0)
+
+        return f_target - f_BH_final
+
+    try:
+        sol = opt.root_scalar(target_fret, x0=scale, bracket=(-25, 75))
+    except ValueError as err:
+        mssg = ("Root finder failed to find scale parameter matching target "
+                f"{f_target}. 'f_target' or 'slope' need to be adjusted.")
+        raise ValueError(mssg) from err
+
+    root_scale = sol.root
+
+    if not sol.converged:
+        raise RuntimeError(f"root finder didn't converge on {f_target=}: {sol}")
+
+    return slope, root_scale
+
+
+def _get_kick_method(method):
+    '''parse method to get the kick ret function (func to avoid repetition)'''
+
+    match method.casefold():
+
+        case 'sigmoid':
+            f_ret = _sigmoid_retention_frac
+
+        case 'tanh':
+            f_ret = _tanh_retention_frac
+
+        case 'maxwellian' | 'f12' | 'fryer2012':
+            f_ret = _maxwellian_retention_frac
+
+        case 'full' | 'everything' | 'all':
+            f_ret = _flat_fallback_frac(0.0)
+
+        case 'none':
+            f_ret = _flat_fallback_frac(1.0)
+
+        case _:
+            raise ValueError(f"Invalid kick distribution method: {method}")
+
+    return f_ret
 
 
 def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
@@ -193,11 +330,11 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
     ----------
     Mr_BH : ndarray
         Array[nbin] of the total initial masses of black holes in each
-        BH mass bin
+        BH mass bin.
 
     Nr_BH : ndarray
         Array[nbin] of the total initial numbers of black holes in each
-        BH mass bin
+        BH mass bin.
 
     f_kick : float, optional
         Unused.
@@ -213,36 +350,38 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
     -------
     Mr_BH : ndarray
         Array[nbin] of the total final masses of black holes in each
-        BH mass bin, after natal kicks
+        BH mass bin, after natal kicks.
 
     Nr_BH : ndarray
         Array[nbin] of the total final numbers of black holes in each
-        BH mass bin, after natal kicks
+        BH mass bin, after natal kicks.
 
-    natal_ejecta : float
-        The total mass of BHs ejected through natal kicks
+    stats : KickStats
+        Statistics on how and how many BHs are kicked.
 
     See Also
     --------
     _maxwellian_retention_frac : Maxwellian retention fraction algorithm.
     _sigmoid_retention_frac : Sigmoid retention fraction algorithm.
+    _tanh_retention_frac : Hyperbolic tangent retention fraction algorithm.
     '''
 
-    match method.casefold():
-
-        case 'sigmoid':
-            f_ret = _sigmoid_retention_frac
-
-        case 'maxwellian' | 'f12' | 'fryer2012':
-            f_ret = _maxwellian_retention_frac
-
-        case _:
-            raise ValueError(f"Invalid kick distribution method: {method}")
+    f_ret = _get_kick_method(method)
 
     # If no given total kick fraction, use old-style of directly using f_ret
     if f_kick is None:
         return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs)
 
     else:
-        # Not really possible to distribute cleanly, maybe just abandon
-        raise NotImplementedError
+
+        # Fit for the desired kick scale
+        try:
+            slp, scl = _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_kick,
+                                              **ret_kwargs)
+        except TypeError as err:
+            mssg = (f"Can only use `f_kick` with methods that use a `scale` and"
+                    f" `slope` parameter, not '{method}'.")
+            raise ValueError(mssg) from err
+
+        # Compute the natal kicks based on fit scale
+        return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, slope=slp, scale=scl)

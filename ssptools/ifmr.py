@@ -23,7 +23,7 @@ _DEFAULT_BSEDICT = dict(
     pts1=0.001, pts2=0.02, pts3=0.02,  # These 3 do matter but are just t-steps
     neta=0.5, bwind=0.0, hewind=0.5, beta=-1.0, xi=1.0,  acc2=1.5, alpha1=1.0,
     lambdaf=0., ceflag=1, cekickflag=2, cehestarflag=0, cemergeflag=0, qcflag=1,
-    kickflag=0, bhflag=0, sigma=265.0, bhsigmafrac=1.0, sigmadiv=-20.0,
+    kickflag=1, bhflag=0, sigma=265.0, bhsigmafrac=1.0, sigmadiv=-20.0,
     ecsn=2.25, ecsn_mlow=1.4, polar_kick_angle=90, aic=1, ussn=1,
     mxns=2.5, rembar_massloss=0.5, wd_mass_lim=1, bhspinflag=0, bhspinmag=0.0,
     grflag=1, eddfac=1., gamma=-2., don_lim=-1, acc_lim=-1, tflag=1, ST_tide=1,
@@ -390,8 +390,9 @@ def _powerlaw_BH_predictor(exponent=3, slope=3e-5, scale=14, m_lower=19):
 
 
 def _brokenpl_BH_predictor(exponents=[1, 3, 1], slopes=[1, 6e-4, 0.43],
-                           scales=[0, 0, 0], m_breaks=[20, 22, 36, 100]):
+                           scales=[0, 0, 0], m_breaks=[20, 22, 36, 150]):
     '''Return N-component power law BH IFMR function.'''
+    # TODO if m_breaks[-1] is below the IMF upper limit, will return all nans.
 
     # TODO wont accept lists, need to coerce in _lines
     BH_line = _broken_powerlaw_predictor(exponents, slopes, scales, m_breaks)

@@ -116,6 +116,7 @@ class PowerLawIMF:
     @property
     def Mtot(self):
         '''Total mass of system under this IMF (assuming `self.N0` stars).'''
+        # TODO integrating this every time is wasteful
         from scipy.integrate import quad
         return quad(self.M, self.mb[0], self.mb[-1])[0]
 
@@ -398,6 +399,7 @@ class MassBins:
 
         self.imf = imf
 
+        # TODO this can fail very confusingly if nbins != N_MS_breaks
         N_MS_breaks = len(m_break) - 1
 
         # ------------------------------------------------------------------
@@ -489,6 +491,7 @@ class MassBins:
 
             # Black Holes
 
+            # TODO breaks when IMF bounds make no BHs at all!
             nbin_BH = nbins['BH']
 
             BH_bl, BH_bu = ifmr.BH_mf
