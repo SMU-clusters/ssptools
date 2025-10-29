@@ -7,3 +7,4 @@ __email__ = "eduardo.balbinot@gmail.com"
 __version__ = "2.0.1"
 
 from .evolve_mf import *
+from .sev import *

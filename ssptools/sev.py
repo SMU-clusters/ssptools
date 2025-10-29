@@ -5,6 +5,9 @@ from .masses import PowerLawIMF
 import numpy as np
 
 
+__all__ = ['StellarEvMassLoss', 'LuminousEvMassLoss']
+
+
 class StellarEvMassLoss:
     '''Compute the impacts of stellar evolution over time.
 
@@ -230,6 +233,7 @@ class LuminousEvMassLoss(StellarEvMassLoss):
 
         dNdt = -dNdm * dmdt
 
+        # TODO redo logic to avoid calling t<tlim here and printing warnings
         mr = self.ifmr.predict(mto)
         cls_rem = np.asarray(self.ifmr.predict_type(mto))
 
@@ -237,16 +241,19 @@ class LuminousEvMassLoss(StellarEvMassLoss):
                        [self.rets['WD'], self.rets['NS']], default=0.0)
 
         # dNast/dt = 0 when making WD/NS and dN/dt when making BHs
-        dNastdt = dNdt * (1 - fr)
+        dNastdt = np.where(
+            t <= self.tlim,  # Avoid going above upper IMF bound
+            np.zeros_like(dNdt),
+            dNdt * (1 - fr)
+        )
 
         if dNdt_only:
             return dNastdt
 
         dMdt = dNdt * (mto - (fr * mr))  # works cause rets[BH]=0
 
-        # Avoid going above upper IMF bound
         dMastdt = np.where(
-            t <= self.tlim,
+            t <= self.tlim,  # Avoid going above upper IMF bound
             np.zeros_like(dMdt),
             dMdt
         )
