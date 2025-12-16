@@ -13,12 +13,23 @@ import scipy.interpolate as interp
 __all__ = ["natal_kicks", "KickStats"]
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(eq=False, frozen=True)
 class KickStats:
     retention: np.ndarray
     mass_kicked: np.ndarray
-    total_kicked: float
     parameters: dict
+
+    @property
+    def total_kicked(self) -> float:
+        return self.mass_kicked.sum()
+
+    @classmethod
+    def no_kicks(cls, nmbin):
+        return cls(
+            retention=np.ones(nmbin),
+            mass_kicked=np.zeros(nmbin),
+            parameters=dict()
+        )
 
 
 # TODO there are currently no checks on input parameters to any fret function.
@@ -222,8 +233,7 @@ def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
     Nr_BH[c] *= retention[c]
 
     stats = KickStats(
-        retention=retention, mass_kicked=natal_ejecta,
-        total_kicked=natal_ejecta.sum(), parameters=ret_kwargs
+        retention=retention, mass_kicked=natal_ejecta, parameters=ret_kwargs
     )
 
     return Mr_BH, Nr_BH, stats

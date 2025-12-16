@@ -794,6 +794,10 @@ class EvolvedMF:
         self.rem_types = np.repeat(self.massbins.nbin._fields[1:],
                                    self.massbins.nbin[1:])
 
+        # To save some repetition, just note these stats here
+        if not self.natal_kicks:
+            self._kick_stats = kicks.KickStats.no_kicks(self.massbins.nbin.BH)
+
         # ------------------------------------------------------------------
         # Initialise ODE solver
         # ------------------------------------------------------------------
@@ -856,19 +860,22 @@ class EvolvedMF:
                     # If kicking basically all, skip ahead
                     if 0. <= M_ret / (Mr.BH[0] / Nr.BH[0]) < self.Nmin:
 
+                        # Compute the natal kicks, just to store the stats
+                        if self.natal_kicks:
+
+                            *_, self._kick_stats = kicks.natal_kicks(
+                                Mr.BH.copy(), Nr.BH.copy(), **self._kick_kw
+                            )
+
+                        # Remove all BHs and skip ahead
                         Mr.BH[:] = 0
                         Nr.BH[:] = 0
-
-                        self._kick_stats = kicks.KickStats(
-                            retention=np.zeros_like(Mr.BH),
-                            mass_kicked=Mr.BH.copy(), total_kicked=M_eject,
-                            parameters=self._kick_kw
-                        )
 
                     else:
 
                         # First remove mass from all bins by natal kicks
                         if self.natal_kicks:
+
                             *_, self._kick_stats = kicks.natal_kicks(
                                 Mr.BH, Nr.BH, **self._kick_kw
                             )
@@ -1232,6 +1239,11 @@ class EvolvedMFWithBH(EvolvedMF):
                     if self.natal_kicks:
                         *_, self._kick_stats = kicks.natal_kicks(
                             Mr.BH, Nr.BH, **self._kick_kw
+                        )
+
+                    else:
+                        self._kick_stats = kicks.KickStats.no_kicks(
+                            self.massbins.nbin.BH
                         )
 
                     Mtot = np.r_[Mr].sum() + Ms.sum()
