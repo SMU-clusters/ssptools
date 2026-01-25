@@ -1,0 +1,5 @@
+# required to build docs
+sphinx
+numpydoc
+pydata-sphinx-theme
+sphinx_toggleprompt
