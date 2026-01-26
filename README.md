@@ -38,14 +38,14 @@ import ssptools
 
 m_break, a_slopes, nbins = [0.08, 0.5, 150.], [+1.3, -2.3], [5, 30]
 pdmf = ssptools.EvolvedMF.from_powerlaw(m_break, a_slopes, nbins,
-                                        FeH=-1.5, tout=13000, Ndot=0, N0=1e6)
+                                        FeH=-1.5, tout=13000, esc_rate=0, N0=1e6)
 ```
 
 Alternatively, an IMF class can be instantiated and used directly:
 
 ```python
 imf = ssptools.masses.PowerLawIMF(m_break, a_slopes, N0=1e6)
-pdmf = ssptools.EvolvedMF(imf, nbins, FeH=-1.5, tout=[0, 1000, 13000], Ndot=0)
+pdmf = ssptools.EvolvedMF(imf, nbins, FeH=-1.5, tout=[0, 1000, 13000], esc_rate=0)
 ```
 
 See the documentation of each class for more details on all possible parameters.
@@ -99,4 +99,4 @@ plt.ylim(bottom=1)
 plt.legend(); plt.show()
 ```
 
-![evolve_mf_example1](docs/evolve_mf_example1.png)
+![evolve_mf_example1](docs/source/_static/evolve_mf_example1.png)

@@ -19,8 +19,7 @@ from ssptools import __version__
 # -- Project information -----------------------------------------------------
 
 project = 'SSPTools'
-copyright = "2018, Eduardo Balbinot"
-author = "Eduardo Balbinot"
+author = "Eduardo Balbinot; Nolan Dickson; Peter Smith; Mark Gieles; Miklos Peuten"
 
 version = release = __version__
 
@@ -39,10 +38,10 @@ extensions = [
 
 autosummary_generate = True
 
-autodoc_inherit_docstrings = False
+autodoc_inherit_docstrings = False # flase
 
-numpydoc_show_class_members = False
-numpydoc_show_inherited_class_members = False
+numpydoc_show_class_members = True # false
+numpydoc_show_inherited_class_members = True # false
 # numpydoc_class_members_toctree = True
 # numpydoc_validation_checks = {"all", "GL01", "EX01", "SA01"}
 
@@ -55,20 +54,28 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 
+# maximum_signature_line_length = 80
+
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-html_theme = "pydata_sphinx_theme"
+# html_theme = "pydata_sphinx_theme"
+html_theme = "sphinx_book_theme"
 
+# html_theme_options = {
+#     "use_edit_page_button": True,
+#     "icon_links": [{
+#         "name": "GitHub",
+#         "url": "https://github.com/SMU-clusters/ssptools",
+#         "icon": "fab fa-github-square",
+#         "type": "fontawesome",  # Default is fontawesome
+#     }]
+# }
 html_theme_options = {
-    "use_edit_page_button": True,
-    "icon_links": [{
-        "name": "GitHub",
-        "url": "https://github.com/SMU-clusters/ssptools",
-        "icon": "fab fa-github-square",
-        "type": "fontawesome",  # Default is fontawesome
-    }]
+    "repository_url": "https://github.com/SMU-clusters/ssptools",
+    "use_repository_button": True,
 }
 
 html_context = {
