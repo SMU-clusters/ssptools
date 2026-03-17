@@ -421,8 +421,7 @@ class MassBins:
 
         # Single number divided equally between break masses
         if isinstance(nbin_MS, int):
-            # TODO breaks if nbins is dict
-            self._nbin_MS_each = _divide_bin_sizes(nbins, N_MS_breaks)
+            self._nbin_MS_each = _divide_bin_sizes(nbin_MS, N_MS_breaks)
 
         # List of bins between each break mass
         else:
@@ -514,7 +513,9 @@ class MassBins:
                 raise ValueError(mssg)
 
             # arbitrarily small width around 1.4
-            bins_NS = mbin(*(np.array(ifmr.NS_mf) + [-0.01, 0.01]))
+            bins_NS = mbin(*np.array([[ifmr.NS_mf.lower - 0.01],
+                                      [ifmr.NS_mf.upper + 0.01]]))
+            # bins_NS = mbin(*(np.array(ifmr.NS_mf) + [-0.01, 0.01]))
 
         # Divide out the bins as if they were cut out from the MS bins
         else:
