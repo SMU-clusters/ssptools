@@ -225,9 +225,31 @@ class TestMassIndices:
         np.testing.assert_equal(res, expected_upper)
 
 
-# class TestMassBinInit:
+class TestMassBinInit:
 
     # Test the creation of mass bins with various methods
+
+    @pytest.mark.parametrize(
+        "nbins, expected_nbin",
+        [
+            ([5, 5, 10], (20, 11, 1, 7)),
+            ([5, 5, 100], (110, 15, 1, 63)),
+            (20, (20, 15, 1, 4)),
+            (dict(MS=20, WD=10, NS=1, BH=5), (20, 10, 1, 5)),
+            (dict(MS=20, WD=10, BH=5), (20, 10, 1, 5)),
+            (dict(MS=[5, 5, 10], WD=10, BH=5), (20, 10, 1, 5))
+        ]
+    )
+    def test_nbins_init(self, nbins, expected_nbin):
+
+        mb = masses.MassBins(
+            nbins=nbins, m_break=DEFAULT_M_BREAK,
+            imf=DEFAULT_IMF, ifmr=ifmr.IFMR(-1)
+        )
+
+        assert mb.nbin == expected_nbin
+
+    # TODO test `binning_method`
 
 
 class TestIMFInit:
