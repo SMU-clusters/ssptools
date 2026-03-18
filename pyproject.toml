@@ -1,6 +1,6 @@
 [project]
 name = "astro-ssptools"
-version = "2.1.1"
+version = "2.1.2"
 description = "Simple Stellar Population Tools"
 authors = [
     {name = "Eduardo Balbinot", email = "eduardo.balbinot@gmail.com"},
@@ -28,7 +28,7 @@ classifiers = [
 [project.optional-dependencies]
 test = [
   "pytest",
-  "cosmic-popsynth"
+  "cosmic-popsynth==3.6.1"
 ]
 
 [project.urls]
