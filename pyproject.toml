@@ -28,7 +28,7 @@ classifiers = [
 [project.optional-dependencies]
 test = [
   "pytest",
-  "cosmic-popsynth"
+  "cosmic-popsynth==3.6.1"
 ]
 
 [project.urls]
