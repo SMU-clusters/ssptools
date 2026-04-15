@@ -270,3 +270,32 @@ class TestNatalKicks:
 
         assert ks.total_kicked == pytest.approx(expected, rel=1e-3)
 
+
+class TestKickVelocities:
+
+    @pytest.mark.parametrize('vdisp', [200., 265., 300.])
+    def test_kick_velocity_distribution(self, vdisp):
+
+        # test fb methods elsewhere, here scale=vdisp, no m-dep
+        masses = np.ones(1_000_000)
+        SNe_method = 'none'
+        FeH = -1
+
+        seed = 42
+
+        rng_test = np.random.default_rng(seed=seed)
+
+        vel_test = kicks.maxwellian_kick_v(
+            m=masses, FeH=FeH, vdisp=vdisp,
+            rng=rng_test, SNe_method=SNe_method
+        )
+
+        # Check mean
+
+        exp_mean = 2 * vdisp * np.sqrt(2 / np.pi)
+        assert np.mean(vel_test) == pytest.approx(exp_mean, rel=1e-3)
+
+        # Check variance
+
+        exp_var = vdisp**2 * ((3 * np.pi) - 8) / np.pi
+        assert np.var(vel_test) == pytest.approx(exp_var, rel=1e-3)

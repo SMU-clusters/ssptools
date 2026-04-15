@@ -6,7 +6,7 @@ from .ifmr import get_data
 import dataclasses
 
 import numpy as np
-from scipy.special import erf
+from scipy.special import erf, gammaincinv
 import scipy.interpolate as interp
 
 
@@ -488,8 +488,9 @@ def maxwellian_kick_v(m, FeH, vdisp=265., *, rng=None, SNe_method='rapid'):
 
             raise ValueError(f"Invalid SNe method '{SNe_method}'.")
 
-    # Sample the Maxwellian (i.e. chi(df=3)) distribution, and apply scaling
+    # Sample the Maxwellian distribution (from it's CDF), and apply scaling
 
     scale = vdisp * (1. - fb)
+    U = rng.uniform(size=np.shape(m))
 
-    return np.sqrt(rng.chisquare(3., size=np.shape(m))) * scale
+    return np.sqrt(2 * gammaincinv(1.5, U)) * scale
