@@ -6,11 +6,11 @@ from .ifmr import get_data
 import dataclasses
 
 import numpy as np
-from scipy.special import erf
+from scipy.special import erf, gammaincinv
 import scipy.interpolate as interp
 
 
-__all__ = ["natal_kicks", "KickStats"]
+__all__ = ["natal_kicks", "KickStats", "maxwellian_kick_v"]
 
 
 @dataclasses.dataclass(eq=False, frozen=True)
@@ -30,6 +30,11 @@ class KickStats:
             mass_kicked=np.zeros(nmbin),
             parameters=dict()
         )
+
+
+# --------------------------------------------------------------------------
+# Retention fraction functions
+# --------------------------------------------------------------------------
 
 
 # TODO there are currently no checks on input parameters to any fret function.
@@ -57,7 +62,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
         The dispersion of the Maxwellian kick velocity distribution. Defaults
         to 265 km/s, as typically used for neutron stars.
 
-    SNe_method : {'rapid', 'delayed', 'NS', None}, optional
+    SNe_method : {'rapid', 'delayed', 'NS', 'none'}, optional
         Which method to use to determine the fallback fraction as a function of
         the black hole mass, which scales the dispersion as σ(1-fb).
         Available methods include the "rapid" (default) or "delayed" supernovae
@@ -215,6 +220,11 @@ def _tanh_retention_frac(m, slope, scale):
     '''
     return 0.5 * (np.tanh(slope * (m - scale)) + 1)
     # return np.tanh(np.exp(slope * (m - scale)))  # alternative
+
+
+# --------------------------------------------------------------------------
+# Performing natal kicks on BH mass functions
+# --------------------------------------------------------------------------
 
 
 def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
@@ -395,3 +405,92 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
 
         # Compute the natal kicks based on fit scale
         return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, slope=slp, scale=scl)
+
+
+# --------------------------------------------------------------------------
+# Computing kick velocities directly
+# --------------------------------------------------------------------------
+
+
+def maxwellian_kick_v(m, FeH, vdisp=265., *, rng=None, SNe_method='rapid'):
+    r'''Estimate the natal kick velocities for BHs of given masses.
+
+    Computes the Maxwellian natal kick velocities for BHs of a certain (BH)
+    mass, under the assumption that these kicks follow a Maxwellian velocity
+    distribution, with a dispersion given by `vdisp` and scaled downwards
+    by some fallback fraction, based on the chosen supernovae prescription.
+
+    In contrast to the other natal kick methods provided, this function does
+    not work on a population of BHs (e.g. within a certain mass bin) but
+    instead randomly samples the velocities of individual BHs of a certain
+    mass.
+
+    Parameters
+    ----------
+    m : float or ndarray
+        The (final) mass of the (individual) BHs to compute a kick velocity for.
+
+    FeH : float
+        The metallicity of the system, used to determine the fallback fraction
+        under the 'rapid' or 'delayed' Fryer+2012 SNe methods.
+
+    vdisp : float, optional
+        The dispersion of the Maxwellian velocity distribution. Defaults to
+        265 km/s, as typically used for neutron stars.
+
+    rng : np.random.Generator, optional
+        A random number generator instance for sampling the Maxwellian
+        distribution. If None, a default RNG (`np.random.default_rng`) is used.
+
+    SNe_method : {'rapid', 'delayed', 'NS', 'neutrino', 'none'}, optional
+        Which method to use to determine the fallback fraction as a function of
+        the black hole mass, which scales the dispersion as σ(1-fb).
+        Available methods include the "rapid" (default) or "delayed" supernovae
+        prescriptions described by Fryer+2012, or the ratio of the neutron star
+        to black hole mass.
+        If None, no fallback will be applied, and all masses will use `vdisp`.
+
+    Returns
+    -------
+    ndarray
+        The randomly sampled natal kick velocities for the given BH masses.
+    '''
+
+    # Get RNG sampler
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    # Get fallback fraction for this mass
+
+    match SNe_method.casefold():
+
+        case 'rapid' | 'delayed':
+
+            fb = np.clip(
+                _F12_fallback_frac(FeH, SNe_method=SNe_method)(m),
+                0.0, 1 - 1e-16
+            )
+
+        case 'ns' | 'neutron' | 'neutron star':
+
+            fb = 1. - _NS_reduced_kick(m_NS=1.4)(m)
+
+        case 'neutrino' | 'neutrino-driven':
+
+            fb = 1. - _neutrino_driven_kick(m_eff=7.0)(m)
+
+        case None | 'none':
+
+            fb = np.zeros_like(m)
+
+        case _:
+
+            raise ValueError(f"Invalid SNe method '{SNe_method}'.")
+
+    # Sample the Maxwellian distribution (from it's CDF), and apply scaling
+
+    scale = vdisp * (1. - fb)
+    U = rng.uniform(size=np.shape(m))
+
+    return np.sqrt(2 * gammaincinv(1.5, U)) * scale
