@@ -214,8 +214,8 @@ def _Ba20_r_BH_predictor(FeH):
     # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
     bhifmr = np.loadtxt(get_data(f"ifmr/uSSE_rapid/IFMR_FEH{FeH:+.2f}.dat"))
 
-    # Grab only stellar type 14 (BHs)
-    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+    # Grab only stellar type 14 (BHs) or 15 (massless remnants; should be mf=0)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] >= 14].T
 
     # linear spline to avoid boundary effects near m_A, m_B, etc
     BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
@@ -243,8 +243,8 @@ def _Ba20_d_BH_predictor(FeH):
     # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
     bhifmr = np.loadtxt(get_data(f"ifmr/uSSE_delayed/IFMR_FEH{FeH:+.2f}.dat"))
 
-    # Grab only stellar type 14 (BHs)
-    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+    # Grab only stellar type 14 (BHs) or 15 (massless remnants; should be mf=0)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] >= 14].T
 
     # linear spline to avoid boundary effects near m_A, m_B, etc
     BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
@@ -321,8 +321,8 @@ def _COSMIC_r_BH_predictor(FeH):
     # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
     bhifmr = np.loadtxt(get_data(f"ifmr/COSMIC_rapid/IFMR_FEH{FeH:+.2f}.dat"))
 
-    # Grab only stellar type 14 (BHs)
-    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+    # Grab only stellar type 14 (BHs) or 15 (massless remnants; should be mf=0)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] >= 14].T
 
     # linear spline to avoid boundary effects near m_A, m_B, etc
     BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
@@ -350,8 +350,8 @@ def _COSMIC_d_BH_predictor(FeH):
     # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
     bhifmr = np.loadtxt(get_data(f"ifmr/COSMIC_delayed/IFMR_FEH{FeH:+.2f}.dat"))
 
-    # Grab only stellar type 14 (BHs)
-    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+    # Grab only stellar type 14 (BHs) or 15 (massless remnants; should be mf=0)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] >= 14].T
 
     # linear spline to avoid boundary effects near m_A, m_B, etc
     BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
@@ -378,8 +378,8 @@ def _SEVN_r_BH_predictor(FeH):
 
     bhifmr = np.loadtxt(get_data(f"ifmr/SEVN_rapid/IFMR_FEH{FeH:+.2f}.dat"))
 
-    # Grab only stellar type 14 (BHs)
-    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+    # Grab only stellar type 14 (BHs) or 15 (massless remnants; should be mf=0)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] >= 14].T
 
     # Get rid of the few random spots where two identical mi exist
     uii = np.unique(BH_mi, return_index=True)[1]
@@ -409,8 +409,8 @@ def _SEVN_d_BH_predictor(FeH):
 
     bhifmr = np.loadtxt(get_data(f"ifmr/SEVN_delayed/IFMR_FEH{FeH:+.2f}.dat"))
 
-    # Grab only stellar type 14 (BHs)
-    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+    # Grab only stellar type 14 (BHs) or 15 (massless remnants; should be mf=0)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] >= 14].T
 
     # Get rid of the few random spots where two identical mi exist
     uii = np.unique(BH_mi, return_index=True)[1]
