@@ -221,6 +221,42 @@ class TestPredictors:
 
         assert pred(mi) == pytest.approx(expected)
 
+    @pytest.mark.parametrize(
+        'FeH, expected',
+        zip(metals, [[18.49417, 38.69255, 58.80344, 32.621085, 35.41285],
+                     [18.49417, 38.69255, 58.80344, 32.621085, 35.41285],
+                     [18.48456, 38.5648, 58.11768, 35.916035, 83.87118],
+                     [18.30818, 34.46558, 48.9004, 40.05018, 46.41717],
+                     [17.19168, 27.089845, 27.43516, 35.714845, 43.52701],
+                     [18.57988, -8.836069, -32.954629, -57.073189, -81.191749],
+                     [18.57988, -8.836069, -32.954629, -57.073189, -81.191749]])
+    )
+    def test_SEVN_r_BH_predictor(self, FeH, expected):
+
+        mi = np.linspace(19., 100., 5)
+
+        pred, *_ = ifmr._SEVN_r_BH_predictor(FeH)
+
+        assert pred(mi) == pytest.approx(expected)
+
+    @pytest.mark.parametrize(
+        'FeH, expected',
+        zip(metals, [[3.978886, 38.69255, 58.80344, 32.621085, 35.41285],
+                     [3.978886, 38.69255, 58.80344, 32.621085, 35.41285],
+                     [3.825558, 38.5648, 58.11768, 35.916035, 83.87118],
+                     [3.705421, 34.46558, 48.9004, 40.05018, 46.41717],
+                     [3.440618, 27.089845, 27.43516, 35.714845, 43.52701],
+                     [3.550918, -8.5357835, -26.371781, -44.2077785, -62.043776],
+                     [3.550918, -8.5357835, -26.371781, -44.2077785, -62.043776]])
+    )
+    def test_SEVN_d_BH_predictor(self, FeH, expected):
+
+        mi = np.linspace(19., 100., 5)
+
+        pred, *_ = ifmr._SEVN_d_BH_predictor(FeH)
+
+        assert pred(mi) == pytest.approx(expected)
+
     @pytest.mark.parametrize('exponent', [.1, 1.0, 2.0])
     @pytest.mark.parametrize('slope', [0.01, 0.05, 0.1])
     @pytest.mark.parametrize('scale', [0, 0.5, 0.9])
