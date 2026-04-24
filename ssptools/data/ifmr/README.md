@@ -107,3 +107,17 @@ Models are computed using the following BSE parameters:
 
 All other parameters are left as defaults (see `ifmr._DEFAULT_BSEDICT`).
 
+
+## `SEVN_rapid/`
+
+SEVN (`sevncodes.gitlab.io/sevn`) IFMR, assuming the Fryer+2012
+rapid supernovae prescription.
+
+
+## `SEVN_delayed/`
+
+SEVN (`sevncodes.gitlab.io/sevn`) IFMR, assuming the Fryer+2012
+delayed supernovae prescription.
+
+All parameters used to run SEVN are listed in the
+`SEVN_delayed/used_params.svpar` file.
