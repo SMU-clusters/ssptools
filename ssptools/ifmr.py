@@ -363,6 +363,68 @@ def _COSMIC_d_BH_predictor(FeH):
     return BH_spline, BH_mi, BH_mf
 
 
+def _SEVN_r_BH_predictor(FeH):
+    '''Return BH IFMR function based on SEVN, rapid-SNe prescription.'''
+
+    # ----------------------------------------------------------------------
+    # Check [Fe/H] is within model grid and adjust otherwise
+    # ----------------------------------------------------------------------
+
+    FeH = _check_IFMR_FeH_bounds(FeH, loc='ifmr/SEVN_rapid')
+
+    # ----------------------------------------------------------------------
+    # Load BH IFMR values
+    # ----------------------------------------------------------------------
+
+    bhifmr = np.loadtxt(get_data(f"ifmr/SEVN_rapid/IFMR_FEH{FeH:+.2f}.dat"))
+
+    # Grab only stellar type 14 (BHs)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+
+    # Get rid of the few random spots where two identical mi exist
+    uii = np.unique(BH_mi, return_index=True)[1]
+
+    # linear spline to avoid boundary effects near m_A, m_B, etc
+    BH_spline = UnivariateSpline(BH_mi[uii], BH_mf[uii], s=0, k=1, ext=0)
+
+    BH_mi = bounds(BH_mi[0], BH_mi[-1])
+
+    BH_mf = bounds(np.min(BH_mf), np.inf)
+
+    return BH_spline, BH_mi, BH_mf
+
+
+def _SEVN_d_BH_predictor(FeH):
+    '''Return BH IFMR function based on SEVN, rapid-SNe prescription.'''
+
+    # ----------------------------------------------------------------------
+    # Check [Fe/H] is within model grid and adjust otherwise
+    # ----------------------------------------------------------------------
+
+    FeH = _check_IFMR_FeH_bounds(FeH, loc='ifmr/SEVN_delayed')
+
+    # ----------------------------------------------------------------------
+    # Load BH IFMR values
+    # ----------------------------------------------------------------------
+
+    bhifmr = np.loadtxt(get_data(f"ifmr/SEVN_delayed/IFMR_FEH{FeH:+.2f}.dat"))
+
+    # Grab only stellar type 14 (BHs)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] == 14].T
+
+    # Get rid of the few random spots where two identical mi exist
+    uii = np.unique(BH_mi, return_index=True)[1]
+
+    # linear spline to avoid boundary effects near m_A, m_B, etc
+    BH_spline = UnivariateSpline(BH_mi[uii], BH_mf[uii], s=0, k=1, ext=0)
+
+    BH_mi = bounds(BH_mi[0], BH_mi[-1])
+
+    BH_mf = bounds(np.min(BH_mf), np.inf)
+
+    return BH_spline, BH_mi, BH_mf
+
+
 def _linear_BH_predictor(slope=0.4, scale=0.7, m_lower=19):
     '''Return simple linear BH IFMR function.'''
 
@@ -501,6 +563,8 @@ class IFMR:
     _Ba20_d_BH_predictor : BH IFMR algorithm based on Banerjee+2020 delayed SNe.
     _COSMIC_r_BH_predictor : BH IFMR algorithm based on COSMIC rapid SNe.
     _COSMIC_d_BH_predictor : BH IFMR algorithm based on COSMIC delayed SNe.
+    _SEVN_r_BH_predictor : BH IFMR algorithm based on SEVN rapid SNe.
+    _SEVN_d_BH_predictor : BH IFMR algorithm based on SEVN delayed SNe.
     _COSMIC_full_BH_predictor : BH IFMR algorithm based on custom COSMIC params.
     _linear_BH_predictor : Linear BH IFMR algorithm.
     _powerlaw_BH_predictor : Single power law BH IFMR algorithm.
@@ -545,6 +609,14 @@ class IFMR:
             case 'cosmic-delayed':
                 BH_kwargs.setdefault('FeH', FeH)
                 BH_func, BH_mi, BH_mf, = _COSMIC_d_BH_predictor(**BH_kwargs)
+
+            case 'sevn-rapid':
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _SEVN_r_BH_predictor(**BH_kwargs)
+
+            case 'sevn-delayed':
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _SEVN_d_BH_predictor(**BH_kwargs)
 
             case 'linear' | 'line':
                 BH_func, BH_mi, BH_mf, = _linear_BH_predictor(**BH_kwargs)
