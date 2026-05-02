@@ -89,7 +89,17 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
 
             # clip fb just below 1, to avoid divide by 0 errors
             fb = np.clip(
-                _F12_fallback_frac(FeH, SNe_method=SNe_method)(m),
+                _F12_fallback_frac(FeH, SNe_method=SNe_method.casefold())(m),
+                0.0, 1 - 1e-16
+            )
+
+        case 'sevn-rapid' | 'sevn-delayed':
+
+            meth = SNe_method.split('-')[-1].casefold()
+
+            # clip fb just below 1, to avoid divide by 0 errors
+            fb = np.clip(
+                _F12_fallback_frac(FeH, model='SEVN', SNe_method=meth)(m),
                 0.0, 1 - 1e-16
             )
 
@@ -114,21 +124,23 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
     return _maxwellian_cdf(vesc, scale)
 
 
-def _F12_fallback_frac(FeH, *, SNe_method='rapid'):
+def _F12_fallback_frac(FeH, *, model='uSSE', SNe_method='rapid'):
     '''Get the fallback fraction for this mass, interpolated from SSE models
-    based on the prescription from Fryer 2012.
+    based on the prescription from Fryer 2012 (or from SEVN).
     Note there are no checks on FeH here, so make sure it's within the grid.
 
+    model must be one of uSSE or SEVN
     SNe_method must be one of rapid or delayed.
     '''
 
     # load in the ifmr data to interpolate fb from mr
     # feh_path = get_data(f"sse/MP_FEH{FeH:+.2f}.dat")  # .2f snaps to the grid
-    feh_path = get_data(f"ifmr/uSSE_{SNe_method}/IFMR_FEH{FeH:+.2f}.dat")
+    feh_path = get_data(f"ifmr/{model}_{SNe_method}/IFMR_FEH{FeH:+.2f}.dat")
 
     # load in the data (only final remnant mass and fbac)
     fb_grid = np.loadtxt(feh_path, usecols=(1, 3), unpack=True)
 
+    # TODO this is incorrect, and should be a function of mi
     # Interpolate the mr-fb grid
     return interp.interp1d(fb_grid[0], fb_grid[1], kind="linear",
                            bounds_error=False, fill_value=(0.0, 1.0))
@@ -468,7 +480,17 @@ def maxwellian_kick_v(m, FeH, vdisp=265., *, rng=None, SNe_method='rapid'):
         case 'rapid' | 'delayed':
 
             fb = np.clip(
-                _F12_fallback_frac(FeH, SNe_method=SNe_method)(m),
+                _F12_fallback_frac(FeH, SNe_method=SNe_method.casefold())(m),
+                0.0, 1 - 1e-16
+            )
+
+        case 'sevn-rapid' | 'sevn-delayed':
+
+            meth = SNe_method.split('-')[-1].casefold()
+
+            # clip fb just below 1, to avoid divide by 0 errors
+            fb = np.clip(
+                _F12_fallback_frac(FeH, model='SEVN', SNe_method=meth)(m),
                 0.0, 1 - 1e-16
             )
 
