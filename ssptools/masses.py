@@ -808,6 +808,10 @@ class MassBins:
         if massbins in star_classes._fields:
             massbins = getattr(self.bins, massbins)
 
+        # TODO I think you can replace this entire thing with just
+        # ind = np.digitize(mass, bin_edges, right=False) - 1
+        # That is vectorized and clearer.
+
         # Since mass bins always increasing, can look at only the lower bound
         try:
             ind = np.flatnonzero(massbins.lower <= mass)[-1]

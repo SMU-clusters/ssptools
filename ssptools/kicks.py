@@ -10,7 +10,7 @@ from scipy.special import erf, gammaincinv
 import scipy.interpolate as interp
 
 
-__all__ = ["natal_kicks", "KickStats", "maxwellian_kick_v"]
+__all__ = ["kick_retention_fraction", "KickStats", "maxwellian_kick_v"]
 
 
 @dataclasses.dataclass(eq=False, frozen=True)
@@ -53,7 +53,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
     Parameters
     ----------
     m : float
-        The mean mass of a BH bin.
+        The mean initial mass of the progenitor star which will make a BH.
 
     vesc : float
         The initial escape velocity of the cluster.
@@ -73,7 +73,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
     Returns
     -------
     float
-        The retention fraction of BHs of this mass.
+        The retention fraction of BHs created by stars of this mass.
 
     '''
 
@@ -137,11 +137,10 @@ def _F12_fallback_frac(FeH, *, model='uSSE', SNe_method='rapid'):
     # feh_path = get_data(f"sse/MP_FEH{FeH:+.2f}.dat")  # .2f snaps to the grid
     feh_path = get_data(f"ifmr/{model}_{SNe_method}/IFMR_FEH{FeH:+.2f}.dat")
 
-    # load in the data (only final remnant mass and fbac)
-    fb_grid = np.loadtxt(feh_path, usecols=(1, 3), unpack=True)
+    # load in the data (only initial star mass and fbac)
+    fb_grid = np.loadtxt(feh_path, usecols=(0, 3), unpack=True)
 
-    # TODO this is incorrect, and should be a function of mi
-    # Interpolate the mr-fb grid
+    # Interpolate the mi-fb grid
     return interp.interp1d(fb_grid[0], fb_grid[1], kind="linear",
                            bounds_error=False, fill_value=(0.0, 1.0))
 
@@ -176,7 +175,7 @@ def _sigmoid_retention_frac(m, slope, scale):
     Parameters
     ----------
     m : float
-        The mean mass of a BH bin.
+        The mean initial mass of the progenitor star which will make a BH.
 
     slope : float
         The "slope" of the sigmoid function, defining the "sharpness" of the
@@ -192,7 +191,7 @@ def _sigmoid_retention_frac(m, slope, scale):
     Returns
     -------
     float
-        The retention fraction of BHs of this mass.
+        The retention fraction of BHs created by stars of this mass.
     '''
     return erf(np.exp(slope * (m - scale)))
 
@@ -213,7 +212,7 @@ def _tanh_retention_frac(m, slope, scale):
     Parameters
     ----------
     m : float
-        The mean mass of a BH bin.
+        The mean initial mass of the progenitor star which will make a BH.
 
     slope : float
         The "slope" of the sigmoid function, defining the "sharpness" of the
@@ -228,10 +227,45 @@ def _tanh_retention_frac(m, slope, scale):
     Returns
     -------
     float
-        The retention fraction of BHs of this mass.
+        The retention fraction of BHs created by stars of this mass.
     '''
     return 0.5 * (np.tanh(slope * (m - scale)) + 1)
     # return np.tanh(np.exp(slope * (m - scale)))  # alternative
+
+
+def kick_retention_fraction(m_ini, f_kick=None, method='fryer2012', **ret_kwargs):
+    '''
+
+    m_ini : float
+        The initial (ZAMS) mass of the progenitor star which will form a BH.
+    '''
+
+    f_ret = _get_kick_method(method)
+
+    # If no given total kick fraction, use old-style of directly using f_ret
+    if f_kick is None:
+
+        return f_ret(m_ini, **ret_kwargs)
+
+        # return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs)
+
+    else:
+        raise NotImplementedError('TODO')
+
+        # get the BHMF using the new fast InitialBHPopulation and then do this
+
+        # # Fit for the desired kick scale
+        # try:
+        #     slp, scl = _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_kick,
+        #                                       **ret_kwargs)
+        # except TypeError as err:
+        #     mssg = (f"Can only use `f_kick` with methods that use a `scale` and"
+        #             f" `slope` parameter, not '{method}'.")
+        #     raise ValueError(mssg) from err
+
+        # # Compute the natal kicks based on fit scale
+        return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, slope=slp, scale=scl)
+
 
 
 # --------------------------------------------------------------------------
@@ -390,6 +424,13 @@ def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
 
     stats : KickStats
         Statistics on how and how many BHs are kicked.
+
+    Notes
+    -----
+    This was the old method of applying natal kicks, when the ejections of BHs
+    were only considered after generating all of the masses. This relied on
+    faulty logic w.r.t. the fallback fractions and are no longer used, but left
+    here for posterity. This method is still valid for non-Maxwellian kicks.
 
     See Also
     --------
