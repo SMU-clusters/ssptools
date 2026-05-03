@@ -117,8 +117,7 @@ class PowerLawIMF:
     def Mtot(self):
         '''Total mass of system under this IMF (assuming `self.N0` stars).'''
         # TODO integrating this every time is wasteful
-        from scipy.integrate import quad
-        return quad(self.M, self.mb[0], self.mb[-1])[0]
+        return self.integrate_M(self.mb[0], self.mb[-1])
 
     @classmethod
     def from_M0(cls, m_break, a, M0, *, ext='zeros'):
@@ -302,6 +301,14 @@ class PowerLawIMF:
     def binned_M(self, bins, *, N=None):
         '''Return the total mass of stars within given mass bins.'''
         return self.binned_eval(bins=bins, N=N)[1]
+
+    def integrate_N(self, ml, mu):
+        from scipy.integrate import quad
+        return quad(self.N, ml, mu)[0]
+
+    def integrate_M(self, ml, mu):
+        from scipy.integrate import quad
+        return quad(self.M, ml, mu)[0]
 
 
 # --------------------------------------------------------------------------
