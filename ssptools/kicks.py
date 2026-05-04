@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from .ifmr import get_data
+from .evolve_mf import InitialBHPopulation
 
 import dataclasses
 
@@ -17,18 +18,79 @@ __all__ = ["kick_retention_fraction", "KickStats", "maxwellian_kick_v"]
 class KickStats:
     retention: np.ndarray
     mass_kicked: np.ndarray
+    num_kicked: np.ndarray
     parameters: dict
 
     @property
     def total_kicked(self) -> float:
+        '''The total amount of BH mass kicked.'''
         return self.mass_kicked.sum()
 
     @classmethod
     def no_kicks(cls, nmbin):
+        '''Kick stats when no kicks are applied.'''
         return cls(
             retention=np.ones(nmbin),
             mass_kicked=np.zeros(nmbin),
+            num_kicked=np.zeros(nmbin),
             parameters=dict()
+        )
+
+    @classmethod
+    def from_final(cls, Mr_BH, Nr_BH, ibh: InitialBHPopulation, parameters):
+        '''Compute the kick stats based on final BH arrays.
+
+        This constructor (the main one, likely) uses the final amounts of BHs,
+        after all kicks have been applied (but no other ejections have taken
+        place, e.g. no dynamical ejections), to compute the statistics based on
+        a corresponding `InitialBHPopulation` where the kicks have *not* been
+        applied.
+
+        This is done by simply assuming that all mass that is in the initial
+        BH population and not the given BH bins must have been natally kicked.
+
+        This will, at best, provide an approximately correct view of the kicks.
+        Any differences attributable to the binning effects in `Mr_BH` compared
+        to `InitialBHPopulation` will be especially notable, and may lead to
+        cases where, e.g., the kick amounts look very slightly negative.
+        There is unfortunately no better way to determine the effects of
+        natal kicks on the final BH bins themselves.
+
+        Also note that this *will not* be valid for cases where the BH bins
+        are created *before* the full amounts of BHs have been formed (i.e.
+        younger than `ibh.age`).
+
+        Parameters
+        ----------
+        Mr_BH : ndarray
+            Array[nbin] of the total final masses of black holes in each
+            BH mass bin, after natal kicks but before any other ejections.
+
+        Nr_BH : ndarray
+            Array[nbin] of the total final numbers of black holes in each
+            BH mass bin, after natal kicks but before any other ejections.
+
+        ibh : InitialBHPopulation
+            The `InitialBHPopulation` instance representing the expected
+            complete initial BH mass function. This must align exactly with
+            the BH bins, and must have been created with `natal_kicks=False`.
+
+        parameters : dict
+            The kick retention function parameters used, for convenient storage.
+        '''
+
+        retention = np.ones_like(Mr_BH)
+        c = ibh.M > 0
+        retention[c] = Mr_BH[c] / ibh.M[c]
+
+        M_kicked = ibh.M - Mr_BH
+        N_kicked = ibh.N - Nr_BH
+
+        return cls(
+            retention=retention,
+            mass_kicked=M_kicked,
+            num_kicked=N_kicked,
+            parameters=parameters
         )
 
 
