@@ -107,7 +107,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
     drawn from a Maxwellian distribution with a certain kick dispersion
     scaled down by a fallback fraction, as described by Fryer et al. (2012).
 
-    The fraction of black holes retained in each mass bin is then found by
+    The fraction of black holes retained is then found by
     integrating the kick velocity distribution from 0 to the estimated initial
     system escape velocity. In other words, by evaluating the CDF at the
     escape velocity.
@@ -116,6 +116,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
     ----------
     m : float
         The mean initial mass of the progenitor star which will make a BH.
+        Used to determine the fallback fraction.
 
     vesc : float
         The initial escape velocity of the cluster.
@@ -126,7 +127,7 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
 
     SNe_method : {'rapid', 'delayed', 'NS', 'none'}, optional
         Which method to use to determine the fallback fraction as a function of
-        the black hole mass, which scales the dispersion as σ(1-fb).
+        the initial mass, which scales the dispersion as σ(1-fb).
         Available methods include the "rapid" (default) or "delayed" supernovae
         prescriptions described by Fryer+2012, or the ratio of the neutron star
         to black hole mass.
@@ -226,7 +227,7 @@ def _sigmoid_retention_frac(m, slope, scale):
     r'''Retention fraction alg. based on a paramatrized sigmoid function.
 
     This method is based on a simple parametrization of the relationship
-    between the retention fraction and the BH mass as a sigmoid function,
+    between the retention fraction and the initial mass as a sigmoid function,
     increasing smoothly between 0 and 1 around a scale mass.
 
    .. math::
@@ -243,7 +244,8 @@ def _sigmoid_retention_frac(m, slope, scale):
         The "slope" of the sigmoid function, defining the "sharpness" of the
         increase. A value of 0 is completely flat (at fret=erf(1)~0.85), an
         increasingly positive value approaches a step function at the scale
-        mass, and a negative value will retain more low-mass bins than high.
+        mass, and a negative value will retain more low-mass progenitor BHs
+        than high.
 
     scale : float
         The scale-mass of the sigmoid function, defining the approximate mass
@@ -262,7 +264,7 @@ def _tanh_retention_frac(m, slope, scale):
     r'''Retention fraction alg. based on a paramatrized function of tanh.
 
     This method is based on a simple parametrization of the relationship
-    between the retention fraction and the BH mass as a sigmoid function,
+    between the retention fraction and the initial mass as a sigmoid function,
     namely the hyperbolic tangent, increasing smoothly between 0 and 1
     and reaching 50% at the given scale mass.
 
@@ -280,7 +282,8 @@ def _tanh_retention_frac(m, slope, scale):
         The "slope" of the sigmoid function, defining the "sharpness" of the
         increase. A value of 0 is completely flat (at 50% for all masses), an
         increasingly positive value approaches a step function at the scale
-        mass, and a negative value will retain more low-mass bins than high.
+        mass, and a negative value will retain more low-mass progenitor BHs
+        than high.
 
     scale : float
         The scale-mass of the sigmoid function, defining the approximate mass
@@ -295,99 +298,79 @@ def _tanh_retention_frac(m, slope, scale):
     # return np.tanh(np.exp(slope * (m - scale)))  # alternative
 
 
-def kick_retention_fraction(m_ini, f_kick=None, method='fryer2012', **ret_kwargs):
-    '''
+def kick_retention_fraction(m_ini, method='fryer2012', **ret_kwargs):
+    r'''Compute the retention fraction of BH natal-kicks from progenitor masses
 
-    m_ini : float
+    Determines the effects of BH natal-kicks, in the form of a retention
+    fraction to be used when creating the BH masses, based on the given natal
+    kick algorithm.
+
+    Various natal kick algorithms are currently available. All methods require
+    different arguments, which can be passed to `ret_kwargs`.
+    See the respective retention functions for details on these arguments and
+    the algorithms themselves.
+
+    Parameters
+    ----------
+    m_ini : float or ndarray[float]
         The initial (ZAMS) mass of the progenitor star which will form a BH.
+        Is passed to the requested retention fraction function.
+
+    method : {'sigmoid', 'tanh', 'maxwellian'}, optional
+        Natal kick algorithm to use, defining the retention fraction as a
+        function of mean bin mass. Defaults to the Maxwellian method.
+
+    **ret_kwargs : dict, optional
+        All other arguments are passed to the retention fraction function.
+
+    Returns
+    -------
+    f_rem : float
+        The retention fraction of the BH created by this input progenitor mass.
+
+    See Also
+    --------
+    _maxwellian_retention_frac : Maxwellian retention fraction algorithm.
+    _sigmoid_retention_frac : Sigmoid retention fraction algorithm.
+    _tanh_retention_frac : Hyperbolic tangent retention fraction algorithm.
     '''
 
     f_ret = _get_kick_method(method)
 
-    # If no given total kick fraction, use old-style of directly using f_ret
-    if f_kick is None:
-
-        return f_ret(m_ini, **ret_kwargs)
-
-        # return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs)
-
-    else:
-        raise NotImplementedError('TODO')
-
-        # get the BHMF using the new fast InitialBHPopulation and then do this
-
-        # # Fit for the desired kick scale
-        # try:
-        #     slp, scl = _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_kick,
-        #                                       **ret_kwargs)
-        # except TypeError as err:
-        #     mssg = (f"Can only use `f_kick` with methods that use a `scale` and"
-        #             f" `slope` parameter, not '{method}'.")
-        #     raise ValueError(mssg) from err
-
-        # # Compute the natal kicks based on fit scale
-        return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, slope=slp, scale=scl)
+    return f_ret(m_ini, **ret_kwargs)
 
 
-
-# --------------------------------------------------------------------------
-# Performing natal kicks on BH mass functions
-# --------------------------------------------------------------------------
-
-
-def _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs):
-
-    c = Nr_BH > 0.1
-    mr_BH = Mr_BH[c] / Nr_BH[c]
-    natal_ejecta = np.zeros_like(Mr_BH)
-    retention = np.full_like(Mr_BH, np.nan)
-
-    retention[c] = f_ret(mr_BH, **ret_kwargs)
-
-    # keep track of how much we eject
-    natal_ejecta[c] = Mr_BH[c] * (1 - retention[c])
-
-    Mr_BH[c] *= retention[c]
-    Nr_BH[c] *= retention[c]
-
-    stats = KickStats(
-        retention=retention, mass_kicked=natal_ejecta, parameters=ret_kwargs
-    )
-
-    return Mr_BH, Nr_BH, stats
-
-
-def _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_target, slope, scale=10.):
-    '''
-    Use a root finding algorithm to determine the value of `scale` needed in
-    order to eject a total fraction of the given BHs `f_target`, using the
-    given `f_ret` function to distribute the kicks among mass bins.
-    Note that while it says "params", right now can only compute the scale.
-    '''
+def _determine_kick_params(method, f_target, IMF, IFMR, slope, scale=10.):
     import scipy.optimize as opt
 
-    c = Nr_BH > 0.1
+    f_ret = _get_kick_method(method)
 
-    m_BH = Mr_BH[c] / Nr_BH[c]
-    M_BH_tot = Mr_BH.sum()
+    # Get domain of progenitor masses that make BHs
+    mi = np.linspace(*IFMR.BH_mi, 50_000)
+    dm = mi[1] - mi[0]
 
-    f_ini = Mr_BH[c] / M_BH_tot
+    # Determine the final BH masses
+    mf = IFMR.predict(mi)
 
-    # f_ret = _tanh_retention_frac
+    M_BH_tot_ini = np.sum(mf * IMF.N(mi) * dm)
 
     # Keep first guess on optionally given scale
     scale = scale if scale is not None else 10.0
 
     def target_fret(scl):
 
-        retention = f_ret(m_BH, scale=scl, slope=slope)
+        retention = f_ret(mi, scale=scl, slope=slope)
 
-        f_BH_final = (f_ini * (1 - retention)).sum(axis=0)
+        M_BH_tot = np.sum(retention * mf * IMF.N(mi) * dm)
+
+        f_BH_final = 1 - (M_BH_tot / M_BH_tot_ini)
 
         return f_target - f_BH_final
 
     try:
-        sol = opt.root_scalar(target_fret, x0=scale, bracket=(-25, 75))
+        sol = opt.root_scalar(target_fret, x0=scale,
+                              bracket=(-25, IFMR.BH_mi.upper + 25))
+
     except ValueError as err:
         mssg = ("Root finder failed to find scale parameter matching target "
                 f"{f_target}. 'f_target' or 'slope' need to be adjusted.")
@@ -425,101 +408,6 @@ def _get_kick_method(method):
             raise ValueError(f"Invalid kick distribution method: {method}")
 
     return f_ret
-
-
-def natal_kicks(Mr_BH, Nr_BH, f_kick=None, method='fryer2012', **ret_kwargs):
-    r'''Computes the effects of BH natal-kicks on the mass and number of BHs
-
-    Determines the effects of BH natal-kicks, and distributes said kicks
-    throughout the different BH mass bins, based on the given natal kick
-    algorithm. In general, BHs are preferentially lost in the low mass
-    bins, with the lowest masses being entirely kicked, and the highest masses
-    being entirely retained.
-
-    Two natal kick algorithms are currently available. Both methods require
-    different arguments, which can be passed to `ret_kwargs`.
-    See the respective retention functions for details on these arguments.
-
-    The first is based on the assumption that the kick velocity is drawn from
-    a Maxwellian distribution with a certain kick dispersion (scaled down by
-    a “fallback fraction” interpolated from a grid of SSE models). The
-    fraction of black holes retained in each mass bin is then found by
-    integrating the kick velocity distribution from 0 to the estimated initial
-    system escape velocity. See Fryer et al. (2012) for more information.
-
-    A second, more directly flexible method is not based on any modelled BH
-    physics, but simply determines the retention fraction of BHs in each bin
-    based on the simple sigmoid function
-    :math:`f_{ret}(m)=\operatorname{erf}\left(e^{a(m-b)}\right)`.
-
-    Both input BH arrays are modified *in place*, as well as returned.
-
-    Parameters
-    ----------
-    Mr_BH : ndarray
-        Array[nbin] of the total initial masses of black holes in each
-        BH mass bin.
-
-    Nr_BH : ndarray
-        Array[nbin] of the total initial numbers of black holes in each
-        BH mass bin.
-
-    f_kick : float, optional
-        Unused.
-
-    method : {'sigmoid', 'maxwellian'}, optional
-        Natal kick algorithm to use, defining the retention fraction as a
-        function of mean bin mass. Defaults to the Maxwellian method.
-
-    **ret_kwargs : dict, optional
-        All other arguments are passed to the retention fraction function.
-
-    Returns
-    -------
-    Mr_BH : ndarray
-        Array[nbin] of the total final masses of black holes in each
-        BH mass bin, after natal kicks.
-
-    Nr_BH : ndarray
-        Array[nbin] of the total final numbers of black holes in each
-        BH mass bin, after natal kicks.
-
-    stats : KickStats
-        Statistics on how and how many BHs are kicked.
-
-    Notes
-    -----
-    This was the old method of applying natal kicks, when the ejections of BHs
-    were only considered after generating all of the masses. This relied on
-    faulty logic w.r.t. the fallback fractions and are no longer used, but left
-    here for posterity. This method is still valid for non-Maxwellian kicks.
-
-    See Also
-    --------
-    _maxwellian_retention_frac : Maxwellian retention fraction algorithm.
-    _sigmoid_retention_frac : Sigmoid retention fraction algorithm.
-    _tanh_retention_frac : Hyperbolic tangent retention fraction algorithm.
-    '''
-
-    f_ret = _get_kick_method(method)
-
-    # If no given total kick fraction, use old-style of directly using f_ret
-    if f_kick is None:
-        return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, **ret_kwargs)
-
-    else:
-
-        # Fit for the desired kick scale
-        try:
-            slp, scl = _determine_kick_params(Mr_BH, Nr_BH, f_ret, f_kick,
-                                              **ret_kwargs)
-        except TypeError as err:
-            mssg = (f"Can only use `f_kick` with methods that use a `scale` and"
-                    f" `slope` parameter, not '{method}'.")
-            raise ValueError(mssg) from err
-
-        # Compute the natal kicks based on fit scale
-        return _unbound_natal_kicks(Mr_BH, Nr_BH, f_ret, slope=slp, scale=scl)
 
 
 # --------------------------------------------------------------------------

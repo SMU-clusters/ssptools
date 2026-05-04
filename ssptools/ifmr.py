@@ -676,6 +676,8 @@ class IFMR:
     def predict_type(self, m_in):
         '''Predict the remnant type (WD, NS, BH) given the initial mass(es)'''
 
+        # TODO note that m_in=nan will always return a WD, should maybe error?
+
         rem_type = np.where(
             m_in >= self.BH_mi[0], 'BH',
             np.where(

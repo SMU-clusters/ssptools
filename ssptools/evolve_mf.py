@@ -23,8 +23,6 @@ class EvolvedMF:
     to a binned present-day mass function (PDMF) at a given set of ages, and
     computes the numbers and masses of stars and remnants in each mass bin.
 
-    # TODO add more in-depth explanation or references to actual algorithm here
-
     Parameters
     ----------
     IMF : PowerLawIMF
@@ -64,12 +62,10 @@ class EvolvedMF:
     NS_ret : float, optional
         Neutron star retention fraction (0 to 1). Defaults to 0.1 (10%).
 
-    BH_ret_int : float, optional
-        Initial black hole retention fraction (0 to 1). Defaults to 1 (100%).
-
     BH_ret_dyn : float, optional
-        Dynamical black hole retention fraction (0 to 1), including both
-        dynamical ejections and natal kicks. Defaults to 1 (100%).
+        Dynamical black hole retention fraction (0 to 1). Does not include the
+        natal kicks, only the a posteriori dynamical ejections.
+        Defaults to 1 (100%).
 
     natal_kicks : bool, optional
         Whether to account for natal kicks in the BH dynamical retention.
@@ -221,7 +217,7 @@ class EvolvedMF:
 
     Notes
     -----
-        The BH kicks and ejections are computed post facto on the BH mass
+        The dynamical ejections are computed after the fact on the BH mass
         bins for each requested output age (`tout`). As such, parameters such
         as `BH_ret_dyn` are applied equally at each age, and not accounted
         for during the evolution, which may not be entirely realistic.
@@ -289,7 +285,7 @@ class EvolvedMF:
         return (np.c_[self.Nr][-1] > 10 * self.Nmin).sum()
 
     def __init__(self, IMF, nbins, FeH, tout, esc_rate, N0=5e5,
-                 tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0, *,
+                 tcc=0.0, NS_ret=0.1, BH_ret_dyn=1.0, *,
                  natal_kicks=False, kick_method='maxwellian',
                  SNe_method='rapid', vesc=90, kick_vdisp=265., f_kick=None,
                  kick_slope=1, kick_scale=20,
@@ -320,9 +316,7 @@ class EvolvedMF:
         self._stellar_ev = stellar_evolution
 
         self.NS_ret = NS_ret
-        self.BH_ret_int = BH_ret_int
         self.BH_ret_dyn = BH_ret_dyn
-        self._frem = {'WD': 1., 'NS': NS_ret, 'BH': BH_ret_int}
 
         self.FeH = FeH
 
@@ -348,6 +342,16 @@ class EvolvedMF:
 
         self.massbins = MassBins(binning_breaks, nbins, self.IMF, self.IFMR,
                                  binning_method=binning_method)
+
+        # ------------------------------------------------------------------
+        # Compute the full initial BH mass function
+        # ------------------------------------------------------------------
+
+        self.ibh = InitialBHPopulation.from_IMF(
+            IMF, FeH=FeH, N0=N0, bins=self.massbins.bins.BH, natal_kicks=False,
+            WD_IFMR_method=WD_IFMR_method, WD_IFMR_kwargs=WD_IFMR_kwargs,
+            BH_IFMR_method=BH_IFMR_method, BH_IFMR_kwargs=BH_IFMR_kwargs,
+        )
 
         # ------------------------------------------------------------------
         # Setup lifetime approximations and compute t_ms of all bin edges
@@ -379,6 +383,19 @@ class EvolvedMF:
 
         self.natal_kicks = natal_kicks
 
+        # If f_kick, try to determine kick scale automatically
+        if f_kick is not None:
+            try:
+                kick_slope, kick_scale = kicks._determine_kick_params(
+                    kick_method, f_kick, self.IMF, self.IFMR,
+                    kick_slope, kick_scale
+                )
+
+            except TypeError as err:
+                mssg = (f"Can only use `f_kick` with methods that use "
+                        f"`scale` and `slope` params, not '{kick_method}'.")
+                raise ValueError(mssg) from err
+
         match kick_method.casefold():
 
             case 'maxwellian' | 'f12' | 'fryer2012':
@@ -387,13 +404,17 @@ class EvolvedMF:
                 FeH_BH = _check_IFMR_FeH_bounds(FeH)
 
                 self._kick_kw = dict(
-                    method=kick_method, f_kick=f_kick, vesc=vesc,
+                    method=kick_method, vesc=vesc,
                     FeH=FeH_BH, vdisp=kick_vdisp, SNe_method=SNe_method
                 )
 
             case 'sigmoid' | 'tanh':
-                self._kick_kw = dict(method=kick_method, f_kick=f_kick,
+
+                self._kick_kw = dict(method=kick_method,
                                      slope=kick_slope, scale=kick_scale)
+
+            case 'full' | 'everything' | 'all' | 'none':
+                self._kick_kw = dict(method=kick_method)
 
             case _:
                 mssg = f"Invalid natal kick algorithm '{kick_method=}'"
@@ -481,6 +502,31 @@ class EvolvedMF:
         out[~asympt] = np.inf
 
         return out
+
+    def _frem(self, mi, rem_type):
+        '''The *initial* retention fraction of a given remnant type.'''
+
+        match rem_type:
+
+            # White dwarfs, assume always 100% retained
+
+            case 'WD':
+                return 1.0
+
+            # Neutron stars, input `NS_ret`, default to constant 10%
+
+            case 'NS':
+                return self.NS_ret
+
+            # Black Holes, compute full natal kicks
+
+            case 'BH':
+
+                if self.natal_kicks:
+                    return kicks.kick_retention_fraction(mi, **self._kick_kw)
+
+                else:
+                    return 1.0
 
     def _derivs(self, t, y):
         '''Main function for computing derivatives relevant to mass evolution
@@ -579,7 +625,7 @@ class EvolvedMF:
                 irem = self.massbins.determine_index(m_rem, cls_rem)
 
                 # Compute Remnant retention fractions based on remnant type
-                frem = self._frem[cls_rem]
+                frem = self._frem(mto, cls_rem)
 
                 # Fill in remnant derivatives
                 getattr(dNr, cls_rem)[irem] = -dNdt * frem
@@ -683,6 +729,7 @@ class EvolvedMF:
 
         dNs[depl_mask] += B * Is
 
+        # TODO is B correct, given alpha is only for the stars??
         dalpha[depl_mask] += (
             B * ((bins_MS.lower[depl_mask] / md) ** 0.5
                  - (bins_MS.upper[depl_mask] / md) ** 0.5)
@@ -794,10 +841,6 @@ class EvolvedMF:
         self.rem_types = np.repeat(self.massbins.nbin._fields[1:],
                                    self.massbins.nbin[1:])
 
-        # To save some repetition, just note these stats here
-        if not self.natal_kicks:
-            self._kick_stats = kicks.KickStats.no_kicks(self.massbins.nbin.BH)
-
         # ------------------------------------------------------------------
         # Initialise ODE solver
         # ------------------------------------------------------------------
@@ -843,52 +886,60 @@ class EvolvedMF:
                 Ms = As * Pk(alpha, 2, *bins_MS)
 
                 # ----------------------------------------------------------
-                # Eject BHs, first through natal kicks, then dynamically
+                # Eject BHs
                 # ----------------------------------------------------------
                 # TODO really feels like this should be done during the
-                #   evolution/derivs? At least for the natal kicks.
+                #   evolution/derivs?
                 # TODO due to rem_classes tuple, ejections done in place, which
                 #   is not ideal
 
                 # Check if any BH have been created
                 if ti > self.compute_tms(self.IFMR.BH_mi.upper):
 
+                    # ------------------------------------------------------
+                    # Get BH natal kick statistics.
+                    # These are somewhat approximate, and also must be done
+                    # before the dynamical ejections so we can try to work out
+                    # how much mass was kicked before them.
+                    # ------------------------------------------------------
+
+                    if self.natal_kicks:
+
+                        # if not all BHs have formed yet, kick stats is invalid
+                        #  this is just due to how we now compute them using ibh
+                        if ((ti == self.tout[-1]) and (ti < self.ibh.age)):
+
+                            mssg = ("_kick_stats will not be valid for ages "
+                                    f"before all BHs form ({self.ibh.age} Myr)")
+                            warnings.warn(mssg)
+
+                        self._kick_stats = kicks.KickStats.from_final(
+                                Mr.BH, Nr.BH, self.ibh, parameters=self._kick_kw
+                            )
+
+                    else:
+
+                        self._kick_stats = kicks.KickStats.no_kicks(
+                            self.massbins.nbin.BH
+                        )
+
+                    # ------------------------------------------------------
+                    # Eject BHs dynamically, based on desired BH_ret_dyn
+                    # ------------------------------------------------------
+
                     # calculate total mass we want to eject
                     M_eject = Mr.BH.sum() * (1.0 - self.BH_ret_dyn)
+
                     M_ret = Mr.BH.sum() - M_eject
 
                     # If kicking basically all, skip ahead
                     if 0. <= M_ret / (Mr.BH[0] / Nr.BH[0]) < self.Nmin:
-
-                        # Compute the natal kicks, just to store the stats
-                        if self.natal_kicks:
-
-                            *_, self._kick_stats = kicks.natal_kicks(
-                                Mr.BH.copy(), Nr.BH.copy(), **self._kick_kw
-                            )
 
                         # Remove all BHs and skip ahead
                         Mr.BH[:] = 0
                         Nr.BH[:] = 0
 
                     else:
-
-                        # First remove mass from all bins by natal kicks
-                        if self.natal_kicks:
-
-                            *_, self._kick_stats = kicks.natal_kicks(
-                                Mr.BH, Nr.BH, **self._kick_kw
-                            )
-                            M_eject -= self._kick_stats.total_kicked
-
-                        if M_eject < 0:
-                            mssg = (
-                                f"Natal kicks already removed {-M_eject} Msun "
-                                "more than total ejections desired by "
-                                f"'BH_ret_dyn={self.BH_ret_dyn}'. "
-                                "Increase BH_ret_dyn or alter natal kicks."
-                            )
-                            raise ValueError(mssg)
 
                         # Remove dynamical BH ejections
                         self._dyn_eject_BH(Mr.BH, Nr.BH, M_eject=M_eject)
@@ -919,14 +970,21 @@ class EvolvedMF:
 
                     self.mr[c][iout, :] = mr
 
+        # ------------------------------------------------------------------
+        # Get some final helpful quantities
+        # ------------------------------------------------------------------
+
         Mtot = self.Ms.sum(axis=1) + np.c_[self.Mr].sum(axis=1)
         Ntot = self.Ns.sum(axis=1) + np.c_[self.Nr].sum(axis=1)
+        # TODO sometimes results in nan, because Ntot has nans?
         self.mmean = Mtot / Ntot
 
         self.converged = sol.successful()
         if not self.converged:
             mssg = "ODE solver has *not* converged, this MF will not be valid."
             warnings.warn(mssg)
+
+        self.sol = sol
 
 
 class EvolvedMFWithBH(EvolvedMF):
@@ -1012,7 +1070,7 @@ class EvolvedMFWithBH(EvolvedMF):
 
         self.strict_BH_target = strict_BH_target
 
-        # leave BH_ret_dyn as default, will be ignored. BH_ret_int is fine
+        # leave BH_ret_dyn as default, will be ignored.
         super().__init__(IMF, nbins, FeH, tout, esc_rate,
                          *args, **kwargs)
 
@@ -1225,26 +1283,44 @@ class EvolvedMFWithBH(EvolvedMF):
                 Ms = As * Pk(alpha, 2, *bins_MS)
 
                 # ----------------------------------------------------------
-                # Eject BHs, first through natal kicks, then dynamically
+                # Eject BHs
                 # ----------------------------------------------------------
 
                 # Check if any BH have been created
                 if ti > self.compute_tms(self.IFMR.BH_mi.upper):
 
-                    fBH_target = self._fBH_target[iout]
+                    # ------------------------------------------------------
+                    # Get BH natal kick statistics.
+                    # These are somewhat approximate, and also must be done
+                    # before the dynamical ejections so we can try to work out
+                    # how much mass was kicked before them.
+                    # ------------------------------------------------------
 
-                    # First remove mass from all bins by natal kicks, if desired
-                    #  Do it first because we dont control the exact amount so
-                    #  this could make the target fBH invalid afterwards
                     if self.natal_kicks:
-                        *_, self._kick_stats = kicks.natal_kicks(
-                            Mr.BH, Nr.BH, **self._kick_kw
-                        )
+
+                        # if not all BHs have formed yet, kick stats is invalid
+                        #  this is just due to how we now compute them using ibh
+                        if ((ti == self.tout[-1]) and (ti < self.ibh.age)):
+
+                            mssg = ("_kick_stats will not be valid for ages "
+                                    f"before all BHs form ({self.ibh.age} Myr)")
+                            warnings.warn(mssg)
+
+                        self._kick_stats = kicks.KickStats.from_final(
+                                Mr.BH, Nr.BH, self.ibh, parameters=self._kick_kw
+                            )
 
                     else:
+
                         self._kick_stats = kicks.KickStats.no_kicks(
                             self.massbins.nbin.BH
                         )
+
+                    # ------------------------------------------------------
+                    # Eject BHs dynamically, based on desired f_BH target
+                    # ------------------------------------------------------
+
+                    fBH_target = self._fBH_target[iout]
 
                     Mtot = np.r_[Mr].sum() + Ms.sum()
                     Mbhtot = Mr.BH.sum()
@@ -1252,14 +1328,23 @@ class EvolvedMFWithBH(EvolvedMF):
 
                     # can only make fBH go down by removing BHs
                     if fBH_target > fBH_current:
+
+                        if self.natal_kicks:
+                            nkwmssgs = ("; after natal kicks",
+                                        " or turn off / alter natal kicks")
+                        else:
+                            nkwmssgs = ("", "")
+
                         mssg = (
                             f"Target `f_BH` ({fBH_target}) is greater than "
-                            f"f_BH formed at t={ti:.1f} ({fBH_current:.3f}; "
-                            f"after natal kicks). Reduce `f_BH`, alter IMF "
-                            f"slopes or turn off / alter natal kicks."
+                            f"f_BH formed at t={ti:.1f} ({fBH_current:.3f}"
+                            f"{nkwmssgs[0]}). Reduce `f_BH` or alter IMF "
+                            f"slopes{nkwmssgs[1]}."
                         )
+
                         if self.strict_BH_target:
                             raise ValueError(mssg)
+
                         else:
                             # Will pass harmlessly through _dyn_eject_BH
                             mssg += (" Proceeding anyways due to "
@@ -1518,6 +1603,18 @@ class InitialBHPopulation:
         # Optionally perform natal kicks
         if natal_kicks:
 
+            # If f_kick, try to determine kick scale automatically
+            if f_kick is not None:
+                try:
+                    kick_slope, kick_scale = kicks._determine_kick_params(
+                        kick_method, f_kick, IMF, _ifmr,
+                        kick_slope, kick_scale
+                    )
+                except TypeError as err:
+                    mssg = (f"Can only use `f_kick` with methods that use "
+                            f"`scale` and `slope` params, not '{kick_method}'.")
+                    raise ValueError(mssg) from err
+
             match kick_method.casefold():
 
                 case 'maxwellian' | 'f12' | 'fryer2012':
@@ -1525,13 +1622,17 @@ class InitialBHPopulation:
                     from .ifmr import _check_IFMR_FeH_bounds
                     FeH_BH = _check_IFMR_FeH_bounds(FeH)
 
-                    kick_kw = dict(method=kick_method, f_kick=f_kick, vesc=vesc,
+                    kick_kw = dict(method=kick_method, vesc=vesc,
                                    FeH=FeH_BH, vdisp=kick_vdisp,
                                    SNe_method=SNe_method)
 
                 case 'sigmoid' | 'tanh':
-                    kick_kw = dict(method=kick_method, f_kick=f_kick,
+
+                    kick_kw = dict(method=kick_method,
                                    slope=kick_slope, scale=kick_scale)
+
+                case 'full' | 'everything' | 'all' | 'none':
+                    kick_kw = dict()
 
                 case _:
                     mssg = f"Invalid natal kick algorithm '{kick_method=}'"
@@ -1658,7 +1759,7 @@ class InitialBHPopulation:
 
         imf = PowerLawIMF(m_break=m_breaks, a=a_slopes, N0=N0, ext='zeros')
 
-        return cls.from_IMF(imf, nbins, FeH, N0=N0, natal_kicks=natal_kicks,
+        return cls.from_IMF(imf, FeH, nbins=nbins, natal_kicks=natal_kicks,
                             binning_breaks=binning_breaks,
                             binning_method=binning_method, **kwargs)
 
@@ -1735,4 +1836,3 @@ class InitialBHPopulation:
         N_BH, M_BH, _ = MF.binned_eval(bins)
 
         return cls(M_BH, N_BH, bins)
-
