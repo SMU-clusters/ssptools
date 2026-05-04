@@ -1,6 +1,6 @@
 [project]
 name = "astro-ssptools"
-version = "2.1.4"
+version = "3.0.0"
 description = "Simple Stellar Population Tools"
 authors = [
     {name = "Eduardo Balbinot", email = "eduardo.balbinot@gmail.com"},
@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Programming Language :: Python",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Astronomy",

@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from .ifmr import get_data
-from .evolve_mf import InitialBHPopulation
 
 import dataclasses
 
@@ -37,7 +36,7 @@ class KickStats:
         )
 
     @classmethod
-    def from_final(cls, Mr_BH, Nr_BH, ibh: InitialBHPopulation, parameters):
+    def from_final(cls, Mr_BH, Nr_BH, ibh, parameters):
         '''Compute the kick stats based on final BH arrays.
 
         This constructor (the main one, likely) uses the final amounts of BHs,
