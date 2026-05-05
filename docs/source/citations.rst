@@ -7,7 +7,7 @@ This library is a fork based on the original algorithms of
 
 The package was then updated and described in
 `Dickson et al. (2023)`_, `Dickson et al. (2024)`_ (version <1.0.0),
-and Dickson et al. (in prep) (version >2.0.0).
+and Dickson et al. (in prep) (version >3.0.0).
 
 
 The stellar evolution lifetimes are interpolated from the
@@ -19,6 +19,7 @@ The default "Maxwellian" IFMR is interpolated from an updated grid of SSE models
 (`Banerjee et al. 2020`_), with the "rapid" and "delayed" supernovae schemes
 from `Fryer et al. (2012)`_.
 The "COSMIC" IFMRs use the COSMIC-popsynth library (`Breivik et al. 2020`_).
+The "SEVN" IFMRs use the SEVN library (`Iorio et al. 2022`_).
 
 If you find this package useful in your research, please consider citing the
 relevant papers.
@@ -34,3 +35,4 @@ relevant papers.
 .. _Banerjee et al. 2020: https://ui.adsabs.harvard.edu/abs/2020A&A...639A..41B
 .. _Fryer et al. (2012): https://ui.adsabs.harvard.edu/abs/2012ApJ...749...91F
 .. _Breivik et al. 2020: https://ui.adsabs.harvard.edu/abs/2020ApJ...898...71B
+.. _Iorio et al. 2022: https://ui.adsabs.harvard.edu/abs/2023MNRAS.524..426I/abstract

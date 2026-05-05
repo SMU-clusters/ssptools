@@ -19,7 +19,7 @@ from ssptools import __version__
 # -- Project information -----------------------------------------------------
 
 project = 'SSPTools'
-author = "Eduardo Balbinot; Nolan Dickson; Peter Smith; Mark Gieles; Miklos Peuten"
+author = "Nolan Dickson; Peter Smith; Eduardo Balbinot; Mark Gieles; Miklos Peuten; Daniel Marin Pina"
 
 version = release = __version__
 

@@ -153,7 +153,7 @@ Black Hole Natal Kicks
 The supernovae natal kicks experienced by BHs, and the resulting rate of
 immediately ejected BHs from a system (defining :math:`f_{ret}`) is a
 complicated function of uncertain supernova physics, and dependent on both
-the properties of the BHs and host system.
+the properties of the progenitor stars, BHs and host system.
 
 By default, if BH natal kicks are applied, the "Maxwellian" method is used.
 First, the assumption is made that the kick velocity is drawn from a Maxwellian
@@ -164,18 +164,18 @@ This velocity is then scaled down linearly by the "fallback fraction"
 :math:`f_b`, the fraction of the precursor stellar envelope which falls back
 on to the BH after the initial supernova explosion.
 This fraction is, by default, interpolated from the same grid of SSE models
-used to define the BH IFMR, and is a function of the individual BH mass,
+used to define the BH IFMR, and is a function of the progenitor star ZAMS mass,
 though other fallback prescriptions are also available.
 
-The fraction of BHs retained in each mass bin (:math:`f_{ret,j}`) is then
+The retention fraction of newly formed BHs (:math:`f_{ret}`) is then
 found by integrating the Maxwellian kick velocity distribution from 0 to the
 escape velocity of the system, which must be given explicitly.
 
 
 Other analytical natal kick retention fraction prescriptions are also available.
 In order to still match the general mass-dependence of the physically-defined
-kicks (i.e. a preferential loss of low-mass BHs), the retention fraction can
-be represented more flexibly by a sigmoid function, such as:
+fallback and kicks (i.e. a preferential loss of low-mass BHs), the retention
+fraction can be represented more flexibly by a sigmoid function, such as:
 
 .. math::
     f_{ret}(m) = \frac{1}{2} \left(
@@ -190,13 +190,11 @@ For convenience, users may also supply a total kick fraction parameter
 which is ejected from the cluster due to natal kicks, such that:
 
 .. math::
-        f_{k} = \sum_j \frac{M_{\mathrm{BH},j}}{M_{\mathrm{BH,tot}}}\
-                        \left(1 - f_{ret}(m_{\mathrm{BH},j})\right)
+        f_{k} = 1 - \frac{M_{\mathrm{BH,tot}}}{M_{\mathrm{BH,initial}}}
+
 
 in which case a root-finding algorithm will be used to determine the
 :math:`m_k` which results in this :math:`f_k`.
-
-
 
 
 

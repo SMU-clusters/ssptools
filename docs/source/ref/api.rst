@@ -44,7 +44,9 @@ Natal Kicks
    :nosignatures:
    :toctree: generated/
 
-   ssptools.kicks.natal_kicks
+   ssptools.kicks.kick_retention_fraction
+   ssptools.kicks.KickStats
+   ssptools.kicks.maxwellian_kick_v
    ssptools.kicks._maxwellian_retention_frac
    ssptools.kicks._sigmoid_retention_frac
    ssptools.kicks._tanh_retention_frac
