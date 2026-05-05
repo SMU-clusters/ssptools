@@ -1590,11 +1590,16 @@ class InitialBHPopulation:
         # ------------------------------------------------------------------
 
         # Get domain of progenitor masses that make BHs
+        # TODO I could potentially get away with less point if logscaled mi
         mi = np.linspace(*_ifmr.BH_mi, 50_000)
         dm = mi[1] - mi[0]
 
         # Determine the final BH masses
         mf = _ifmr.predict(mi)
+
+        # Skip 0-mass remnants
+        mi = mi[mf > 0.0]
+        mf = mf[mf > 0.0]
 
         # Determine which BH bin each BH will fall into
         # TODO this may be behaving weird when out of bounds? (!)

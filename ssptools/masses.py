@@ -547,6 +547,7 @@ class MassBins:
             bins_BH = mbin(bins_MS.lower[BH_mask].copy(),
                            bins_MS.upper[BH_mask].copy())
             bins_BH.lower[0] = ifmr.BH_mf.lower
+            bins_BH.upper[-1] = ifmr.BH_mf.upper
 
             # Neutron Stars
 
