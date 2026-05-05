@@ -1,6 +1,6 @@
 [project]
 name = "astro-ssptools"
-version = "3.0.0"
+version = "3.1.0"
 description = "Simple Stellar Population Tools"
 authors = [
     {name = "Eduardo Balbinot", email = "eduardo.balbinot@gmail.com"},

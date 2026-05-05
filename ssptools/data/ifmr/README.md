@@ -1,7 +1,7 @@
 # Initial-Final Mass Relation Grids
 
 This folder contains various grids of black hole IFMR prescriptions (initial
-and final black hole masses between ZAMS 15-150 Msun), to be used in fast
+and final black hole masses between ZAMS 15-250 Msun), to be used in fast
 IFMR functions.
 
 The updated versions of both COSMIC and SSE are very similar in most aspects,
@@ -65,6 +65,18 @@ Models are computed using the following SSE parameters:
 | bwind     | 0.0   |
 | hewind    | 1.0   |
 | mxns      | 2.5   |
+
+
+## `uSSE_rapid_ppsn`
+
+Identical to `uSSE_rapid`, but with `psflag=1`, using the PPSN/PSN schemes
+according to Belczynski et al. (2016).
+
+
+## `uSSE_delayed_ppsn`
+
+Identical to `uSSE_delayed`, but with `psflag=1`, using the PPSN/PSN schemes
+according to Belczynski et al. (2016).
 
 
 ## `COSMIC_rapid/`
