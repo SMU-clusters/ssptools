@@ -1583,7 +1583,7 @@ class InitialBHPopulation:
 
             bins = massbins.bins.BH
 
-        nbin_BH = bins.lower.size
+        nbin_BH = len(bins.lower)
 
         # ------------------------------------------------------------------
         # Compute the initial amounts of BHs expected from the IMF and IFMR
