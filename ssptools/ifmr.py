@@ -256,6 +256,66 @@ def _Ba20_d_BH_predictor(FeH):
     return BH_spline, BH_mi, BH_mf
 
 
+def _Ba20_r_ppsn_BH_predictor(FeH):
+    '''Return BH IFMR function based on Banerjee+2020 rapid-SNe prescription.'''
+
+    # ----------------------------------------------------------------------
+    # Check [Fe/H] is within model grid and adjust otherwise
+    # ----------------------------------------------------------------------
+
+    FeH = _check_IFMR_FeH_bounds(FeH, loc='ifmr/uSSE_rapid_ppsn')
+
+    # ----------------------------------------------------------------------
+    # Load BH IFMR values
+    # ----------------------------------------------------------------------
+
+    # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
+    ifmr_path = get_data(f"ifmr/uSSE_rapid_ppsn/IFMR_FEH{FeH:+.2f}.dat")
+    bhifmr = np.loadtxt(ifmr_path)
+
+    # Grab only stellar type 14 (BHs) or 15 (massless remnants; should be mf=0)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] >= 14].T
+
+    # linear spline to avoid boundary effects near m_A, m_B, etc
+    BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
+
+    BH_mi = bounds(BH_mi[0], BH_mi[-1])
+
+    BH_mf = bounds(np.min(BH_mf), np.inf)
+
+    return BH_spline, BH_mi, BH_mf
+
+
+def _Ba20_d_ppsn_BH_predictor(FeH):
+    '''Return BH IFMR function based on Banerjee+2020 delay-SNe prescription.'''
+
+    # ----------------------------------------------------------------------
+    # Check [Fe/H] is within model grid and adjust otherwise
+    # ----------------------------------------------------------------------
+
+    FeH = _check_IFMR_FeH_bounds(FeH, loc='ifmr/uSSE_delayed_ppsn')
+
+    # ----------------------------------------------------------------------
+    # Load BH IFMR values
+    # ----------------------------------------------------------------------
+
+    # TODO if 5e-3 < FeH < 0.0, this will put wrong sign on filename
+    ifmr_path = get_data(f"ifmr/uSSE_delayed_ppsn/IFMR_FEH{FeH:+.2f}.dat")
+    bhifmr = np.loadtxt(ifmr_path)
+
+    # Grab only stellar type 14 (BHs) or 15 (massless remnants; should be mf=0)
+    BH_mi, BH_mf = bhifmr[:, :2][bhifmr[:, 2] >= 14].T
+
+    # linear spline to avoid boundary effects near m_A, m_B, etc
+    BH_spline = UnivariateSpline(BH_mi, BH_mf, s=0, k=1, ext=0)
+
+    BH_mi = bounds(BH_mi[0], BH_mi[-1])
+
+    BH_mf = bounds(np.min(BH_mf), np.inf)
+
+    return BH_spline, BH_mi, BH_mf
+
+
 def _COSMIC_full_BH_predictor(FeH, remnantflag=3, windflag=3, eddlimflag=0,
                               pisn=45., zsun=0.02, *, Ncpu=-1, max_mi=250.1,
                               **bse_kwargs):
@@ -509,7 +569,9 @@ class IFMR:
         functions for information on all required methods.
         This will fail if the required arguments are not passed here.
 
-    BH_method : {"banerjee20", "cosmic", "cosmic-rapid", "cosmic-delayed",
+    BH_method : {"banerjee20", "banerjee20-delayed",
+                 "banerjee20-ppsn", "banerjee20-delayed-ppsn"
+                 "cosmic", "cosmic-rapid", "cosmic-delayed",
                  "linear", "powerlaw", "brokenpowerlaw"}, optional
         The Black Hole IFMR algorithm to use. Defaults to the updated-SSE
         version decsribed by Banerjee et al. (2020) (using the rapid supernovae
@@ -597,6 +659,15 @@ class IFMR:
             case 'nbody7-delayed' | 'banerjee20-delayed' | 'ba20-delayed':
                 BH_kwargs.setdefault('FeH', FeH)
                 BH_func, BH_mi, BH_mf, = _Ba20_d_BH_predictor(**BH_kwargs)
+
+            case ('banerjee20-ppsn' | 'ba20-ppsn' | 'banerjee20-rapid-ppsn'
+                  | 'ba20-rapid-ppsn'):
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _Ba20_r_ppsn_BH_predictor(**BH_kwargs)
+
+            case 'banerjee20-delayed-ppsn' | 'ba20-delayed-ppsn':
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _Ba20_d_ppsn_BH_predictor(**BH_kwargs)
 
             case 'cosmic':
                 BH_kwargs.setdefault('FeH', FeH)
