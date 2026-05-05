@@ -1,0 +1,130 @@
+#USED PARAMS
+ce_alpha:                          3                                  //[N][PS] alpha in binding energy (Eq. 73 in Hurley02)
+ce_kce:                            1                                  //[N][PS] Fraction of non core mass  participating to the CE (e.g. envelope of giants) retained after the CE coalescence.If -1, use a rescaled version of eq. 77 In Hurley just for che CE mass
+ce_knce:                           1                                  //[N][PS] Fraction of non core mass not participating to the CE (e.g. a MS star) retained after the CE coalescence.If -1, use the eq. 77 in Hurley 2002 (ce_kce is ignored unless it is -1, in this case the SEVN1 binding energy method is used)
+check_stalling_time:               5                                  //[N][PS] Time in seconds (units granularity) after which the system is considered stalled and the evolution is stopped and an error is raised)
+eddington_factor:                  1                                  //[N][PS] Eddington factor to limit accretion on a compact object. 1 means accretion exactly at the Eddington limit, >1 is super Eddington accretion
+ev_Nchunk:                         1000                               //[N][PS] Evolve Nchunk at time
+ev_max_repetitions:                100                                //[N][PS] Maximum number of repetitions allowed in the sse and bse. If we reach this number an error is raised
+ev_naked_tshold:                   0.0001                             //[N][PS] Mass difference threshold (Msun) between envelope and core to set a star as nakedHe or nakedCO.
+gw_tshold:                         1                                  //[N][PS] Time in units of Hubble time. If GWtime<GW_TSHOLD*tHubble, enable GW process
+hard_kappa:                        0.1                                //[N][PS] kappa parameter for fastcluster hardening option (Eq. 13 Mapelli+21)
+hard_mass_average:                 1                                  //[N][PS] Average mass of the perturber stars in the environment producing the hardening in Msun
+hard_rhoc:                         39900                              //[N][PS] central density of the cluster in Msun/pc^3
+hard_sigma:                        5                                  //[N][PS] 3D velocity dispersion of the cluster in km/s
+hard_xi:                           3                                  //[N][PS] xi parameter for fastcluster hardening option (Eq. 11 Mapelli+21)
+jtrack_dm_step:                    0.1                                //[N][PS] Mass increment when trying to matche the core ans in case the binding energy
+jtrack_h_err_rel_max:              0.005                              //[N][PS] relative difference in total mass to consider the convergence reached 
+jtrack_max_dm_factor:              1.2                                //[N][PS] The maximum new zams that will be tested is Mzams +  jtrack_DM_factor_max*dM_accumul
+jtrack_max_iteration:              10                                 //[N][PS] Maximum, number of iteration to found the convergence
+jtrack_min_dm_factor:              0                                  //[N][PS] The minimum new zams that will be tested is Mzams +  jtrack_DM_factor_min*dM_accumul
+jtrack_tshold_dm_rel:              0.01                               //[N][PS] relative accumulated mass threshold to change tracks
+max_z:                             0.04                               //[N][NS] Max Z Mass in the loaded tables
+max_z_he:                          0.05                               //[N][NS] Max Z Mass in the loaded  pureHE tables
+max_zams:                          450                                //[N][NS] Max Zams Mass in the loaded tables
+max_zams_he:                       350                                //[N][NS] Max Zams Mass in the loaded pureHE tables
+min_z:                             1e-11                              //[N][NS] Min Z Mass in the loaded tables
+min_z_he:                          1e-11                              //[N][NS] Min Z Mass in the loaded pureHE tables
+min_zams:                          2                                  //[N][NS] Min Zams Mass in the loaded tables
+min_zams_he:                       0.36                               //[N][NS] Min Zams Mass in the loaded pureHE tables
+ns_magnetic_mscale:                0.15                               //[N][PS] Magnetic field decay mass-scale in Msun
+ns_magnetic_tscale:                1000                               //[N][PS] Magnetic field decay timescale in Myr
+nthreads:                          1                                  //[N][PS] Number of threads to be used
+rlo_eps_nova:                      0.001                              //[N][PS] Fraction of accreted matter retained in nova eruption
+rlo_f_mass_accreted:               0.5                                //[N][PS] Fraction of mass lost trough the  RLO that is accreted on the other star
+rlo_gamma_angmom:                  -2                                 //[N][PS] Parameter to manage the ang mom loss in hurley_rlo, if -1 angmom is lost from the primary (Jeans mode), -2 angmom is lost from the secondary (re-isotropic emission),otherwise if>0 gamma is the fraction of ang mom lost from the system.
+rlo_max_nuclearmt:                 5                                  //[N][PS] Max value of the mass to use in the normalisation of the nuclear mass transfer (Eq. 59 Hurley+02)
+sn_Mchandra:                       1.44                               //[N][PS] Chandrasekar mass limit for WD
+sn_Mejected_average:               -1                                 //[N][PS] Average remnant mass to use in the Unified kick model.  -1 use the default SN model value (if any)
+sn_Mremnant_average:               -1                                 //[N][PS] Average ejected mass to use in the Unified kick model. -1 use the default SN model value (if any)
+sn_Mremnant_average_NS:            1.33                               //[N][PS] Mean value of the Gaussian sampling the remnant mass for NS. Notice it is not used in all SNmodel. If SN model is compact this value overwrite the parameter is used also as sn_Mremnant_average.
+sn_Mremnant_std_NS:                0.09                               //[N][PS] Std value of the Gaussian sampling the remnant mass for NS. Notice it is not used in all SNmodel
+sn_co_lower_ecsn:                  1.38                               //[N][PS] Minimum value of the CO core  Mass  to explode as electron capture SN
+sn_co_lower_ecsn_pureHe:           -1                                 //[N][PS] Minimum value of the CO core  Mass  to explode as electron capture SN for pureHe star, if -1 use the same of H star
+sn_co_lower_sn:                    1.44                               //[N][PS] Minimum value of the CO core  Mass  to explode as SN
+sn_co_lower_sn_pureHe:             -1                                 //[N][PS] Minimum value of the CO core  Mass  to explode as SN for pureHe star, if -1 use the same of H star
+sn_compact_csi25_tshold:           0.35                               //[N][PS] csi25 parameter threshold for explosion/implosion decision, if -1 use a stochastic threshold based on the results of  Patton&Sukhbold20
+sn_compact_fallback:               0.9                                //[N][PS] Fallback fraction for implosions in the compact SN option
+sn_kick_velocity_stdev:            217                                //[N][PS] Standard deviation  of the Maxwellian distribution of kick velocity (Used in the Hobbs and Unified SN kick model)
+sn_max_ns_mass:                    3                                  //[N][PS] Maximum mass allowed for a NS
+sn_min_vkick:                      0                                  //[N][PS] Minimum Vkick after a SN explotsion in km/s
+star_lambda:                       -1                                 //[N][PS] if >0 Constant Lambda in binding energy (Eq. 69 in Hurley02). If -1 use Lambda from Claeys et al. 2014 (Appendix A).
+star_lambda_fth:                   1                                  //[N][PS] Fraction of internal energy that goes to the binding energy. Used only if star_lambda<0. Notice that some Lambda models do not include an option for the fraction of internal energu (e.g. option -5)
+star_lambda_pureHe:                0.5                                //[N][PS] Constant lambda to use for the pureHe stars. Notice: some Lambda model have their own estimate of Lamdba_he (for example option -4), in this case this value is not considered
+star_tshold_WR_envelope:           0.021                              //[N][PS] Relative difference threshold between envelope (Mass-MHE) and total mass to define a star as Wolf Rayet
+ts_max_dt:                         -1                                 //[N][PS] Force the adaptive timestep to be smaller than this value, it has the priority on any other option, -1 means that the option is disabled
+ts_maximum_variation:              0.05                               //[N][PS] Relative maximum variation of stellar and binary properties used in the adaptive time step
+ts_min_dt:                         -1                                 //[N][PS] Force the adaptive timestep to be larger than this value, it will it has the priority on any other option, -1 means that the option is disabled
+ts_min_points_per_phase:           10                                 //[N][PS] Set the maximum time step so that we have at least N points evaluated in each phase
+w_alpha:                           1.5                                //[N][PS] factor to tune mass accretion through winds (Eq.6 Hurley+02)
+w_beta:                            0.125                              //[N][PS] factor to tune stellar wind velocity (Eq.9 in Hurley+02)
+xspin_sigma_maxwell:               0.1                                //[N][PS] options for standard deviation of Maxwellian distribution for Xspin
+Z:                                 list                               //[L][PS] if list use the Z in the input list, otherwise ust this option for all the stars.
+bcol:                              Semimajor:Eccentricity:BEvent      //[L][PS] Additional columns to print in the output file for binary evolution runs. Default is empty, but any property of binary stars can be added (check names in the Property class)
+cemode:                            energy                             //[L][PS] Option for Common Envelope Process
+circmode:                          angmom                             //[L][PS] Option for orbit circularisation at the onset of RLO
+collmode:                          hurley                             //[L][PS] Option for stellar collision at periastron
+dtout:                             list                               //[L][PS] If list use the dtout reported in the input list, otherwise use this value for all the stars and binaries.
+ev_setwM:                          linear                             //[L][PS] Option to set weights for mass interpolation
+ev_setwM_log:                      log                                //[L][PS] Option to set weights for mass interpolation for log properties (i.e. Radius,Luminosity,Inertia)
+ev_setwM_tphase:                   rational                           //[L][PS] Option to set weights for estimating the stellar phases times
+gwmode:                            peters                             //[L][PS] Option for GW decay  Process
+hardmode:                          disabled                           //[L][PS] Option for hardening in clusters
+ibmode:                            new                                //[L][PS] Input file format for binaries [new*] [legacy] [sevn1]
+inertiamode:                       Hurley                             //[L][PS] option for inertia estimate when tabuse_inertia is false
+kmode:                             hurley_kick                        //[L][PS] Option for SN kick Process
+list:                              /home/dmarin/SSPTables/data/input_SEVN_delay/input_FEH-0.1.txt//[L][PS] Complete path to input file (list of binaries or single stars)
+log_level:                         error                              //[L][PS] Log output level: debug, info, warning, error
+mixmode:                           simple                             //[L][PS] Option for stellar mix Process
+myself:                            /home/dmarin/PeTar-SEVN/sevn/      //[L][NS] Complete path to the SEVN folder
+name_prefix:                                                          //[L][PS] prefix to add to the name of the systems
+o:                                 /home/dmarin/SSPTables/data/output_SEVN_delay/output_FEH-0.1///[L][PS] Complete path to the output folder. It will be created by the code
+omode:                             csv                                //[L][PS] Define the results output format (ascii or csv)
+rlmode:                            hurley_rl                          //[L][PS] Option for Roche Lobe mass transfer Process
+rlo_stability:                     qcrit_Hradiative_stable            //[L][PS] Option for RLO mass transfer stability
+scol:                              Worldtime:Mass:PhaseBSE            //[L][PS] Additional columns to print in the output file for single evolution runs. Default is empty, but any property of single stars can be added (check names in the Property class)
+sn_kicks:                          hobbs                              //[L][PS] SN kick model
+sn_neutrinomloss:                  lattimer89                         //[L][PS] SN neutrino mass loss model
+sn_pairinstability:                mapelli20                          //[L][PS] SN pair instability model
+sn_wdoverchandra:                  ecsn                               //[L][PS] What to to if WD mass is larger than Mchandra
+snmode:                            list                               //[L][PS] if list use the snmode in input, otherwise ust this option for all the stars.
+spin:                              list                               //[L][PS] if list use the spin in the input list, otherwise ust this option for all the stars.
+tables:                            /home/dmarin/PeTar-SEVN/sevn/tables/SEVNtracks_parsec_ov05_AGB//[L][PS] Complete path to look-up tables
+tables_HE:                         /home/dmarin/PeTar-SEVN/sevn/tables/SEVNtracks_parsec_pureHe36//[L][PS] Complete path to look-up tables of pure-HE stars
+tf:                                list                               //[L][PS] If list use the tf reported in the input list, otherwise use this value for all the stars and binaries.
+tini:                              list                               //[L][PS] If list use the tini reported in the input list, otherwise use this value for all the stars.
+tmode:                             tides_simple                       //[L][PS] Option for Tides  Process
+wdmode:                            wdhurleyhe                         //[L][PS] Model for WD formation
+wmode:                             hurleyTT24mod                      //[L][PS] Option for Wind mass transfer Process
+xspinmode:                         disabled                           //[L][PS] options for black hole spin models
+check_stalling:                    true                               //[B][PS] If true check stalling stars. If the elapsed evolution time is larger than 20s an error is thrown
+ev_R_linear_interp:                false                              //[B][PS] if true interpolate the Radius using a linear scaling (default uses log scale)
+ev_set_maxCO:                      false                              //[B][PS] If true the first time a star develops a CO core, we set the maximum CO core Mass for SSE as the last value of the interpolating tracks
+ev_set_minHE:                      false                              //[B][PS] If true the first time a star develops a CO core, we set the minimum HE core Mass for SSE as the last value of the interpolating tracks
+ev_use_track_radius_for_envconv:   true                               //[B][PS] if true and tables are not used for envconv use always the interpolated radius to get the temperature to compare with the model that set the convective envelope
+gw_onlybco:                        false                              //[B][PS] If true activate the GW orbital decay on for binary compact objects
+initerror_stop:                    false                              //[B][PS] If true terminate the run when a error on a system initialisation is thrown
+io_literal_phases:                 false                              //[B][PS] If true print the phase as literal otherwise as integer
+io_logfile:                        true                               //[B][PS] If true output the logfile
+io_logphase_bse:                   false                              //[B][PS] If true use the BSE phases instead of SEVN phases in the logfile
+ns_detailed_accretion:             false                              //[B][PS] If true activate a detailed handling of the mass accretion on Neutron star accounting for the variation of spin and magnetic field
+optimistic_scenario_hg:            false                              //[B][PS] If true enable optimistic scenario for HG, i.e. allow to start a CE after a unstable mass transfer
+rlo_QHE:                           false                              //[B][PS] If true enable the Quasi Homogeneous Evolution  after a RLO mass transfer following Elrdige&Stanway11
+rlo_allow_browndwarf_formation:    false                              //[B][PS] If true allows main sequence stars that reach masses below 0.01 Msun during RLO to be turned in brown dwarf
+rlo_enable_collision:              false                              //[B][PS] If true allow collision at periastron during RLO
+rlo_mtstable_ms:                   false                              //[B][PS] If true mass transfer from radiative MS and pureHE MS are always stable
+rseed:                             false                              //[B][PS] If true the random seed is given in input in the source list (last column)
+star_rotation:                     true                               //[B][PS] If false neglect stellar spin in all the processes
+tabuse_Xsup:                       false                              //[B][PS] If true use the surface abundance tables (xxxsup.dat, optional tables)
+tabuse_envconv:                    true                               //[B][PS] If true estimate the properties of the convective envelope using the tables (xxxconv.dat, optional tables)
+tabuse_inertia:                    false                              //[B][PS] If true use the inertia from tables (if present)
+tabuse_rco:                        true                               //[B][PS] If true interpolate RCO from tables (if present)
+tabuse_rhe:                        true                               //[B][PS] If true interpolate RHE from tables (if present)
+ts_check_NSspin:                   false                              //[B][PS] If true take into account the variation of OmegaRem for NS in the adaptive timestep. It should be set to true if interested on pulsars
+ts_check_spin:                     false                              //[B][PS] If true take into account the variation (SSE only) of OmegaSpin in the adaptive timestep
+ts_check_spin_bse:                 false                              //[B][PS] If true take into account the variation (BSE only) of OmegaSpin in the adaptive timestep
+ts_tinydt_binary_fix:              true                               //[B][PS] If true apply a fix for extremely small timesteps in binary evolution by forcing to accept the step if dt<1E-15 and by setting the next proposed dt to 1E-7
+turn_WR_to_pureHe:                 false                              //[B][PS] if true transform the star to pureHe as soon as it is flagged as WR (see parameter star_tshold_WR_envelope)
+use_always_Reff:                   true                               //[B][PS] If true use always the effective Radius (minimum between Radius and RL) for single and binary processes
+use_thg_hurley:                    false                              //[B][PS] If true estimate the HG time from the Hurley+00 functional forms instead of using the convective envelope
+xspin_bavera:                      false                              //[B][PS] If true the Bavera correction for the black-hole spin is applied

@@ -1,6 +1,6 @@
 [project]
 name = "astro-ssptools"
-version = "2.1.1"
+version = "3.1.0"
 description = "Simple Stellar Population Tools"
 authors = [
     {name = "Eduardo Balbinot", email = "eduardo.balbinot@gmail.com"},
@@ -8,6 +8,7 @@ authors = [
     {name = "Peter Smith", email = "smith.peter.902@gmail.com"},
     {name = "Mark Gieles", email = "m.gieles@surrey.ac.uk"},
     {name = "Miklos Peuten", email = "m.peuten@surrey.ac.uk"},
+    {name = "Daniel Marin Pina", email = "daniel.marin@uni-heidelberg.de"},
 ]
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +20,7 @@ dependencies = [
 ]
 
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Programming Language :: Python",
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Astronomy",
@@ -28,7 +29,7 @@ classifiers = [
 [project.optional-dependencies]
 test = [
   "pytest",
-  "cosmic-popsynth"
+  "cosmic-popsynth==3.6.1"
 ]
 
 [project.urls]
