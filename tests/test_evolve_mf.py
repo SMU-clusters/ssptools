@@ -19,7 +19,7 @@ DEFAULT_IMF = masses.PowerLawIMF(
 # TODO need a test for when multiple tout, as that can be unstable.
 DEFAULT_KWARGS = dict(
     IMF=DEFAULT_IMF, nbins=[5, 5, 20], FeH=-1.00, tout=[12_000], esc_rate=0.,
-    N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_int=1.0, BH_ret_dyn=1.0,
+    N0=5e5, tcc=0.0, NS_ret=0.1, BH_ret_dyn=1.0,
     natal_kicks=False, vesc=90
 )
 
@@ -376,3 +376,108 @@ class TestDerivatives:
 
         ydot = emf._derivs_esc(t, y)
         assert ydot == pytest.approx(expected)
+
+
+
+class TestInitialBHPopulation:
+
+    bins = masses.mbin(lower=[0.1, 5.0, 10.0, 20.0, 50.],
+                       upper=[5.0, 10.0, 20.0, 50., 150])
+
+    ibh_kw = dict(IMF=DEFAULT_IMF, natal_kicks=False, bins=bins)
+
+    # ----------------------------------------------------------------------
+    # Initialization routines
+    # ----------------------------------------------------------------------
+
+    # def test_from_bhmf
+
+    @pytest.mark.parametrize('FeH', [-2, -1.5, -1, -0.5, 0.0])
+    def test_from_imf(self, FeH):
+
+        # Initialize Initial BH Population
+
+        ibh = evolve_mf.InitialBHPopulation.from_IMF(FeH=FeH, **self.ibh_kw)
+
+        # Recompute the amounts of BHs
+
+        _ifmr = ifmr.IFMR(FeH=FeH)
+
+        mi = np.linspace(*_ifmr.BH_mi, 500_000)  # use high resolution
+        dm = mi[1] - mi[0]
+
+        # Determine the final BH masses
+        mf = _ifmr.predict(mi)
+
+        # Skip 0-mass remnants
+        mi = mi[mf > 0.0]
+        mf = mf[mf > 0.0]
+
+        Nbins = len(self.bins.lower)
+
+        inds = np.digitize(mf, np.r_[self.bins.lower, self.bins.upper[-1]]) - 1
+
+        # natal kicks off, no frem term
+        expected_MBH = np.bincount(inds, weights=mf * DEFAULT_IMF.N(mi) * dm,
+                                   minlength=Nbins)
+
+        expected_NBH = np.bincount(inds, weights=DEFAULT_IMF.N(mi) * dm,
+                                   minlength=Nbins)
+
+        assert ibh.M == pytest.approx(expected_MBH, rel=0.01)
+        assert ibh.N == pytest.approx(expected_NBH, rel=0.01)
+
+    # ----------------------------------------------------------------------
+    # Properties and attributes
+    # ----------------------------------------------------------------------
+
+    @pytest.mark.parametrize(
+        'FeH, expected_Mtot',
+        [
+            (-2, 21843.38486),
+            (-1.5, 20827.24313),
+            (-1, 17298.61685),
+            (-0.5, 14599.08499),
+            (0.0, 7491.10354)
+        ],
+    )
+    def test_Mtot(self, FeH, expected_Mtot):
+        ibh = evolve_mf.InitialBHPopulation.from_IMF(FeH=FeH, **self.ibh_kw)
+
+        assert ibh.Mtot == pytest.approx(expected_Mtot, rel=0.001)
+
+    @pytest.mark.parametrize(
+        'FeH, expected_age',
+        [
+            (-2, 8.85291),
+            (-1.5, 8.67542),
+            (-1, 8.46274),
+            (-0.5, 8.10353),
+            (0.0, 7.55464)
+        ],
+    )
+    def test_age(self, FeH, expected_age):
+        ibh = evolve_mf.InitialBHPopulation.from_IMF(FeH=FeH, **self.ibh_kw)
+
+        assert ibh.age == pytest.approx(expected_age, rel=0.0001)
+
+    @pytest.mark.parametrize(
+        'FeH, expected_Ms_lost',
+        [
+            (-2, 44383.71036),
+            (-1.5, 43786.47009),
+            (-1, 43010.53556),
+            (-0.5, 42071.81981),
+            (0.0, 39949.14502)
+        ],
+    )
+    def test_Ms_lost(self, FeH, expected_Ms_lost):
+        ibh = evolve_mf.InitialBHPopulation.from_IMF(FeH=FeH, **self.ibh_kw)
+
+        assert ibh.Ms_lost == pytest.approx(expected_Ms_lost, rel=0.0001)
+
+
+
+
+
+

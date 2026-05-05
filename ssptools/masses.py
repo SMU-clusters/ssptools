@@ -117,8 +117,7 @@ class PowerLawIMF:
     def Mtot(self):
         '''Total mass of system under this IMF (assuming `self.N0` stars).'''
         # TODO integrating this every time is wasteful
-        from scipy.integrate import quad
-        return quad(self.M, self.mb[0], self.mb[-1])[0]
+        return self.integrate_M(self.mb[0], self.mb[-1])
 
     @classmethod
     def from_M0(cls, m_break, a, M0, *, ext='zeros'):
@@ -302,6 +301,14 @@ class PowerLawIMF:
     def binned_M(self, bins, *, N=None):
         '''Return the total mass of stars within given mass bins.'''
         return self.binned_eval(bins=bins, N=N)[1]
+
+    def integrate_N(self, ml, mu):
+        from scipy.integrate import quad
+        return quad(self.N, ml, mu)[0]
+
+    def integrate_M(self, ml, mu):
+        from scipy.integrate import quad
+        return quad(self.M, ml, mu)[0]
 
 
 # --------------------------------------------------------------------------
@@ -540,6 +547,7 @@ class MassBins:
             bins_BH = mbin(bins_MS.lower[BH_mask].copy(),
                            bins_MS.upper[BH_mask].copy())
             bins_BH.lower[0] = ifmr.BH_mf.lower
+            bins_BH.upper[-1] = ifmr.BH_mf.upper
 
             # Neutron Stars
 
@@ -807,6 +815,10 @@ class MassBins:
         # Otherwise assume it's already a massbins class
         if massbins in star_classes._fields:
             massbins = getattr(self.bins, massbins)
+
+        # TODO I think you can replace this entire thing with just
+        # ind = np.digitize(mass, bin_edges, right=False) - 1
+        # That is vectorized and clearer.
 
         # Since mass bins always increasing, can look at only the lower bound
         try:
