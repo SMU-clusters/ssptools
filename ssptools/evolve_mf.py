@@ -1444,8 +1444,18 @@ class InitialBHPopulation:
     Ns_lost = None
 
     def f_BH(self, M_cluster):
-        '''The total mass fraction in BHs, given a total population mass.'''
+        '''The total mass fraction in BHs, given a total population mass.
+        Note that this assumes that M_cluster has been corrected for mass losses
+        caused by making these BHs.
+        '''
         return self.Mtot / M_cluster
+
+    def f_BH_from_IMF(self):
+        '''The total mass fraction in BHs, assuming that `M0=self.imf.Mtot`.
+        Note that this method *will* correct for stellar evolution mass losses
+        using `self.Ms_lost` (unlike `self.f_BH`).
+        '''
+        return self.Mtot / (self.IMF.Mtot - self.Ms_lost + self.Mtot)
 
     def __init__(self, M_BH, N_BH, BH_bins):
         '''Should not init from this, use provided classmethods.'''
@@ -1828,6 +1838,11 @@ class InitialBHPopulation:
 
         kwargs : dict, optional
             All other arguments are passed to the `InitialBHPopulation`.
+
+        Notes
+        -----
+        This class will not have all the same attributes as when initialized
+        through e.g. `from_IMF`, and is only provided here for convenience.
         '''
 
         MF = PowerLawIMF(m_breaks, a_slopes, N0=N0)
