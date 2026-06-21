@@ -18,6 +18,7 @@ class KickStats:
     retention: np.ndarray
     mass_kicked: np.ndarray
     num_kicked: np.ndarray
+    f_kick: float
     parameters: dict
 
     @property
@@ -32,6 +33,7 @@ class KickStats:
             retention=np.ones(nmbin),
             mass_kicked=np.zeros(nmbin),
             num_kicked=np.zeros(nmbin),
+            f_kick=0.0,
             parameters=dict()
         )
 
@@ -85,10 +87,13 @@ class KickStats:
         M_kicked = ibh.M - Mr_BH
         N_kicked = ibh.N - Nr_BH
 
+        f_kick = 1 - (Mr_BH.sum() / ibh.M.sum())
+
         return cls(
             retention=retention,
             mass_kicked=M_kicked,
             num_kicked=N_kicked,
+            f_kick=f_kick,
             parameters=parameters
         )
 
