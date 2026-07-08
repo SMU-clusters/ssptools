@@ -18,6 +18,7 @@ class KickStats:
     retention: np.ndarray
     mass_kicked: np.ndarray
     num_kicked: np.ndarray
+    f_kick: float
     parameters: dict
 
     @property
@@ -32,6 +33,7 @@ class KickStats:
             retention=np.ones(nmbin),
             mass_kicked=np.zeros(nmbin),
             num_kicked=np.zeros(nmbin),
+            f_kick=0.0,
             parameters=dict()
         )
 
@@ -85,10 +87,13 @@ class KickStats:
         M_kicked = ibh.M - Mr_BH
         N_kicked = ibh.N - Nr_BH
 
+        f_kick = 1 - (Mr_BH.sum() / ibh.M.sum())
+
         return cls(
             retention=retention,
             mass_kicked=M_kicked,
             num_kicked=N_kicked,
+            f_kick=f_kick,
             parameters=parameters
         )
 
@@ -147,11 +152,16 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
 
     match SNe_method.casefold():
 
-        case 'rapid' | 'delayed':
+        # TODO should maybe also accept bas20-rapid-ppsn? we just use the same
+        # fback for both of them cause if its got a BH mass of 0 it doesnt
+        # matter what the kick is, so would just need to change math strip below
+        case 'rapid' | 'delayed' | 'ba20-rapid' | 'ba20-delayed' | 'ba20-rapid-ppsn' | 'ba20-delayed-ppsn':
+
+            meth = SNe_method.casefold().split('-', 1)[-1].removesuffix('-ppsn')
 
             # clip fb just below 1, to avoid divide by 0 errors
             fb = np.clip(
-                _F12_fallback_frac(FeH, SNe_method=SNe_method.casefold())(m),
+                _F12_fallback_frac(FeH, model='uSSE', SNe_method=meth)(m),
                 0.0, 1 - 1e-16
             )
 
@@ -207,6 +217,7 @@ def _F12_fallback_frac(FeH, *, model='uSSE', SNe_method='rapid'):
                            bounds_error=False, fill_value=(0.0, 1.0))
 
 
+# Not sure if these kicks work under new kick setup, given m is now m_ini
 def _NS_reduced_kick(m_NS=1.4):
     '''Reduce σ by scaling the final BH mass based on the neutron star mass.'''
     return lambda m: m_NS / m
@@ -415,22 +426,24 @@ def _get_kick_method(method):
 
 
 def maxwellian_kick_v(m, FeH, vdisp=265., *, rng=None, SNe_method='rapid'):
-    r'''Estimate the natal kick velocities for BHs of given masses.
+    r'''Estimate the natal kick velocities for BHs formed from given masses.
 
-    Computes the Maxwellian natal kick velocities for BHs of a certain (BH)
-    mass, under the assumption that these kicks follow a Maxwellian velocity
-    distribution, with a dispersion given by `vdisp` and scaled downwards
-    by some fallback fraction, based on the chosen supernovae prescription.
+    Computes the Maxwellian natal kick velocities for BHs formed from a
+    progenitor star of a certain initial (ZAMS) mass, under the assumption
+    that these kicks follow a Maxwellian velocity distribution, with a
+    dispersion given by `vdisp` and scaled downwards by some fallback fraction,
+    based on the chosen supernovae prescription.
 
     In contrast to the other natal kick methods provided, this function does
     not work on a population of BHs (e.g. within a certain mass bin) but
     instead randomly samples the velocities of individual BHs of a certain
-    mass.
+    initial mass.
 
     Parameters
     ----------
     m : float or ndarray
-        The (final) mass of the (individual) BHs to compute a kick velocity for.
+        The (initial) mass of the progenitor stars which will form the BHs to
+        compute a kick velocity for.
 
     FeH : float
         The metallicity of the system, used to determine the fallback fraction
@@ -467,10 +480,12 @@ def maxwellian_kick_v(m, FeH, vdisp=265., *, rng=None, SNe_method='rapid'):
 
     match SNe_method.casefold():
 
-        case 'rapid' | 'delayed':
+        case 'rapid' | 'delayed' | 'ba20-rapid' | 'ba20-delayed':
+
+            meth = SNe_method.split('-')[-1].casefold()
 
             fb = np.clip(
-                _F12_fallback_frac(FeH, SNe_method=SNe_method.casefold())(m),
+                _F12_fallback_frac(FeH, model='uSSE', SNe_method=meth)(m),
                 0.0, 1 - 1e-16
             )
 
@@ -500,7 +515,7 @@ def maxwellian_kick_v(m, FeH, vdisp=265., *, rng=None, SNe_method='rapid'):
 
             raise ValueError(f"Invalid SNe method '{SNe_method}'.")
 
-    # Sample the Maxwellian distribution (from it's CDF), and apply scaling
+    # Sample the Maxwellian distribution (from its CDF), and apply scaling
 
     scale = vdisp * (1. - fb)
     U = rng.uniform(size=np.shape(m))
