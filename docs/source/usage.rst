@@ -8,20 +8,6 @@ To use SSPTools in a project::
 
 
 
-.. raw:: html
-
-   <details>
-   <summary><a>show code</a></summary>
-
-.. code-block:: python
-
-   TODO add plotting function and plots of MFs below
-
-.. raw:: html
-
-   </details>
-
-
 Mass Functions
 ==============
 
@@ -42,12 +28,13 @@ shape of the IMF and the total number of stars.
    >>> m_break, a_slopes = [0.1, 0.5, 150.], [-1.3, -2.3]
    >>> imf = ssptools.masses.PowerLawIMF(m_break, a_slopes, N0=5e5)
 
+Note that by default this IMF is normalized to ``N0=1``.
+
 The IMF can also be created based on the total initial stellar mass:
 
 .. code-block:: python
 
-    >>> imf = ssptools.masses.PowerLawIMF.from_M0(m_break, a_slopes, M0=1e6)
-
+    >>> imf_m = ssptools.masses.PowerLawIMF.from_M0(m_break, a_slopes, M0=1e6)
 
 This IMF class can be easily evaluated to determine the number of (or mass in)
 stars of a given mass.
@@ -89,17 +76,72 @@ mass outside these bounds.
 Evolved Mass Functions
 ----------------------
 
+
 A mass function can be evolved to a given age using the
 :class:`ssptools.EvolvedMF`. This class is initialized, at a minimum, using an
 IMF, a configuration of mass bins, a metallicity, output ages and a rate of
 dynamical escapes.
 
+
+.. raw:: html
+
+   <details>
+   <summary><a>show plotting function</a></summary>
+
+.. code-block:: python
+
+   def plot_MF(pdmf):
+
+       fig, ax = plt.subplots(layout='constrained')
+
+       mes, mew, _, meb = pdmf.massbins.bins
+
+       # ax.step(np.mean(mes, axis=0), pdmf.IMF.binned_N(mes))
+       ax.step(np.mean(mes, axis=0),
+               pdmf.IMF.binned_N(mes, N=pdmf.N0) / (mes.upper - mes.lower),
+               color=('k', 0.5), label='IMF')
+
+       for i in range(pdmf.nout):
+           ax.step(pdmf.ms[i], pdmf.Ns[i] / (mes.upper - mes.lower),
+                   ls='-', label=f"Stars @ t={pdmf.tout[i]} Myr")
+
+           ax.step(pdmf.mr.WD[i], pdmf.Nr.WD[i] / (mew.upper - mew.lower),
+                   # ls='--', c=str(0.8 * 1 - (i / pdmf.nout)),
+                   ls=':', label=f" WD  @ t={pdmf.tout[i]} Myr")
+
+           ax.step(pdmf.mr.BH[i], pdmf.Nr.BH[i] / (meb.upper - meb.lower),
+                   ls='--', c=str(0.8 * 1 - (i / pdmf.nout)),
+                         label=f" BHs  @ t={pdmf.tout[i]} Myr")
+
+       ax.set_ylabel(r"$\frac{\mathrm{d}N}{\mathrm{d}m}$", rotation=0)
+       ax.set_xlabel(r"$m\ [M_\odot]$")
+       ax.set_yscale('log')
+       ax.set_xscale('log')
+       ax.set_ylim(bottom=1)
+       ax.legend()
+
+       return fig
+
+
+.. raw:: html
+
+   </details>
+
+
 .. code-block:: python
 
     >>> nbins, FeH, tout = [5, 10], -1.5, [1000, 5000, 13000]
 
-    >>> pdmf = ssptools.EvolvedMF(imf, nbins=nbins, FeH=FeH, tout=tout, esc_rate=0)
+    >>> pdmf = ssptools.EvolvedMF(imf, N0=imf.N0, nbins=nbins, FeH=FeH, tout=tout, esc_rate=0)
 
+.. figure:: _static/pdmf_example1.png
+  :width: 700
+  :align: center
+  :alt: Example of Evolved Mass Function.
+
+Note again here that ``N0`` defaults to ``N0=5e5``. if ``N0=None``, the ``N0``
+will be taken from ``imf.N0``. It is good practice to make sure the two match,
+but not absolutely necessary.
 
 The evolved MF classes are based on a set of mass bins, representing the
 total mass and number of stars and stellar remnants with individual masses in a
@@ -117,6 +159,12 @@ and remnant type:
 
     >>> nbins_map = dict(MS=[5, 10], WD=5, BH=5, NS=1)
     >>> pdmf = ssptools.EvolvedMF(imf, nbins=nbins_map, FeH=FeH, tout=tout, esc_rate=0)
+
+
+.. figure:: _static/pdmf_example2.png
+  :width: 700
+  :align: center
+  :alt: Example of Evolved Mass Function.
 
 
 The time step(s) at which the mass function will be stored are given by the
@@ -234,6 +282,12 @@ fraction :math:`f_{BH}`), then the second mass function class
     array([10314.71733708,  5549.11294948,  3533.17540509])
 
 
+.. figure:: _static/pdmf_example3.png
+  :width: 700
+  :align: center
+  :alt: Example of Evolved Mass Function.
+
+
 The escape of stars over time through, e.g., tidal losses from the system to an
 external potential can be included through the ``esc_rate`` argument.
 This represents the total escape rate through these mechanisms, in units of
@@ -244,6 +298,11 @@ stars (if ``esc_norm="N"``) or :math:`M_\odot` (if ``esc_norm="M"``) per Myr.
     >>> esc_rate = -10  # Msun / Myr
     >>> pdmf = ssptools.EvolvedMFWithBH(imf, nbins=nbins_map, FeH=FeH, tout=tout, f_BH=fbh_target, esc_rate=esc_rate, esc_norm='M')
 
+.. figure:: _static/pdmf_example4.png
+  :width: 700
+  :align: center
+  :alt: Example of Evolved Mass Function.
+
 Passing a float will result in a constant escape rate. If known, a
 function defining the escape rate over time can also be used. This function must
 accept a single time argument, in Myrs, and return a rate in correct units.
@@ -251,10 +310,14 @@ accept a single time argument, in Myrs, and return a rate in correct units.
 .. code-block:: python
 
     >>> def M_dot_t(t: float) -> float:
-    ...     return 10_000 / (t + 500)
+    ...     return -500 / (t + 1)**0.5
 
     >>> pdmf = ssptools.EvolvedMFWithBH(imf, nbins=nbins_map, FeH=FeH, tout=tout, f_BH=fbh_target, esc_rate=M_dot_t, esc_norm='M')
 
+.. figure:: _static/pdmf_example5.png
+  :width: 700
+  :align: center
+  :alt: Example of Evolved Mass Function.
 
 For more details on all the available arguments, see :class:`ssptools.EvolvedMF`
 and :class:`ssptools.EvolvedMFWithBH`.
@@ -416,8 +479,7 @@ in the BH IFMRs here.
            0.01006539], shape=(50,))
 
 Aside from the kick distributions based on physically motivated models, simpler
-analytical retention functions can also be used
-law can also be used.
+analytical retention functions can also be used.
 
 .. code-block:: python
 
