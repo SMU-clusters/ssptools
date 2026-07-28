@@ -1,5 +1,5 @@
 # required to build docs
 sphinx
 numpydoc
-sphinx-book-theme
+pydata-sphinx-theme
 sphinx_toggleprompt
