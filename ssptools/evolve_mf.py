@@ -68,22 +68,23 @@ class EvolvedMF:
         Defaults to 1 (100%).
 
     natal_kicks : bool, optional
-        Whether to account for natal kicks in the BH dynamical retention.
-        Defaults to False.
+        Whether to apply BH natal kicks. Defaults to False.
 
-    kick_method : {'maxwellian', 'sigmoid'}, optional
+    kick_method : {'maxwellian', 'tanh', 'sigmoid'}, optional
         The BH natal kick algorithm to use, if `natal_kicks=True`.
-        See `kicks.natal_kicks` for more details.
+        See `kicks` for more details.
 
-    SNe_method : {'rapid', 'delayed', None}, optional
+    SNe_method : str, optional
         Which supernovae prescription to use to determine the fallback fraction.
         See `kicks._maxwellian_retention_frac` for more information.
         Note that the `BH_IFMR_method` should likely be changed in concert with
         this.
 
     vesc : float, optional
-        Initial cluster escape velocity, in km/s, for use in the computation of
-        BH natal kick effects. Defaults to 90 km/s.
+        Initial system escape velocity, in km/s, for use in the computation of
+        BH natal kick effects. Only used if `kick_method='maxwellian'`.
+        See `kicks._maxwellian_retention_frac` for more information.
+        Defaults to 90 km/s.
 
     kick_vdisp : float, optional
         The dispersion of the Maxwellian natal kick velocity distribution.
@@ -91,18 +92,22 @@ class EvolvedMF:
         See `kicks._maxwellian_retention_frac` for more information.
 
     f_kick : float, optional
-        Unused.
+        A total fraction (0, 1) of BH mass to be ejected initially through
+        natal kicks. If not None (default), a `kick_scale` will be automatically
+        computed which results in this amount of BH mass being kicked.
+        Only possible when using the 'tanh' and 'sigmoid' kick methods.
 
-    kick_slope : float
+    kick_slope : float, optional
         The "slope" of the sigmoid retention function, defining the
-        "sharpness" of the increase. Only used if `kick_method='sigmoid'`.
-        See `kicks._sigmoid_retention_frac` for more information.
+        "sharpness" of the increase. Only used with 'tanh' and 'sigmoid' kick
+        methods.
 
     kick_scale : float
         The scale-mass of the sigmoid retention function, defining the
         approximate mass of the turn-over from 0 to 1.
-        Only used if `kick_method='sigmoid'`.
-        See `kicks._sigmoid_retention_frac` for more information.
+        Only used with 'tanh' and 'sigmoid' kick methods. If `f_kick` is not
+        None, this will only be used as the initial guess, and the final scale
+        used will not match this.
 
     stellar_evolution : bool, optional
         Whether or not to include stellar evolution effects in the mass function
@@ -1404,10 +1409,10 @@ class InitialBHPopulation:
     up to the short age at which all of the most massive stars (which will
     make all of the BHs in a population) turn off and form remnants.
 
-    As this class is *only* focused on the initial BH populations, the
-    constituent DEs can be simplified, ignoring all other remnants (which will
-    not form in time) and all stellar escapes (which are largely negligible
-    by this time). This speeds up the computation considerably.
+    As this class is *only* focused on the initial BH populations, this class
+    does not have to solve the full DE system, but can simply compute the amount
+    of BHs formed directly based on an IMF and IFMR, resulting in an extremely
+    fast runtime.
 
     This class should be initialized using one of the given classmethods,
     `from_IMF` (to evolve the cluster from a given IMF until all BHs are formed)
@@ -1506,16 +1511,24 @@ class InitialBHPopulation:
             Metallicity, in solar fraction [Fe/H].
 
         natal_kicks : bool, optional
-            Whether to account for natal kicks in the BH dynamical retention.
+            Whether to apply BH natal kicks.
             Defaults to True (note this difference from `EvolvedMF`).
 
         kick_method : {'maxwellian', 'tanh', 'sigmoid'}, optional
             The BH natal kick algorithm to use, if `natal_kicks=True`.
             See `kicks` for more details.
 
+        SNe_method : str, optional
+            Which supernovae prescription to use to determine the fallback
+            fraction. See `kicks._maxwellian_retention_frac` for more
+            information. Note that the `BH_IFMR_method` should likely be
+            changed in concert with this.
+
         vesc : float, optional
-            Initial cluster escape velocity, in km/s, for use in the
-            computation of BH natal kick effects. Defaults to 90 km/s.
+            Initial system escape velocity, in km/s, for use in the computation
+            of BH natal kick effects. Only used if `kick_method='maxwellian'`.
+            See `kicks._maxwellian_retention_frac` for more information.
+            Defaults to 90 km/s.
 
         kick_vdisp : float, optional
             The dispersion of the Maxwellian natal kick velocity distribution.
@@ -1523,17 +1536,23 @@ class InitialBHPopulation:
             See `kicks._maxwellian_retention_frac` for more information.
 
         f_kick : float, optional
+            A total fraction (0, 1) of BH mass to be ejected initially through
+            natal kicks. If not None (default), a `kick_scale` will be
+            automatically computed which results in this amount of BH mass
+            being kicked.
+            Only possible when using the 'tanh' and 'sigmoid' kick methods.
 
-        kick_slope : float
+        kick_slope : float, optional
             The "slope" of the sigmoid retention function, defining the
-            "sharpness" of the increase. Only used if `kick_method='sigmoid'`.
-            See `kicks._sigmoid_retention_frac` for more information.
+            "sharpness" of the increase. Only used with 'tanh' and 'sigmoid'
+            kick methods.
 
         kick_scale : float
             The scale-mass of the sigmoid retention function, defining the
             approximate mass of the turn-over from 0 to 1.
-            Only used if `kick_method='sigmoid'`.
-            See `kicks._sigmoid_retention_frac` for more information.
+            Only used with 'tanh' and 'sigmoid' kick methods. If `f_kick` is not
+            None, this will only be used as the initial guess, and the final
+            scale used will not match this.
 
         binning_breaks : list of float, optional
             The binning break masses to use when constructing the mass bins,
@@ -1740,12 +1759,14 @@ class InitialBHPopulation:
             If None, uses the N0 of the given IMF class. Defaults to 5e5 stars.
 
         natal_kicks : bool, optional
-            Whether to account for natal kicks in the BH dynamical retention.
+            Whether to apply BH natal kicks.
             Defaults to True (note this difference from `EvolvedMF`).
 
         vesc : float, optional
-            Initial cluster escape velocity, in km/s, for use in the
-            computation of BH natal kick effects. Defaults to 90 km/s.
+            Initial system escape velocity, in km/s, for use in the computation
+            of BH natal kick effects. Only used if `kick_method='maxwellian'`.
+            See `kicks._maxwellian_retention_frac` for more information.
+            Defaults to 90 km/s.
 
         binning_breaks : list of float, optional
             The binning break masses to use when constructing the mass bins,
@@ -1801,10 +1822,6 @@ class InitialBHPopulation:
 
         N0 : int, optional
             Total initial number of BHs, over all bins. Defaults to 1000 BHs.
-
-        vesc : float, optional
-            Initial cluster escape velocity, in km/s, for use in the
-            computation of BH natal kick effects. Defaults to 90 km/s.
 
         binning_method : {'default', 'split_log', 'split_linear'}, optional
             The spacing method to use when constructing the mass bins.
