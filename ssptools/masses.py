@@ -123,7 +123,7 @@ class PowerLawIMF:
     def from_M0(cls, m_break, a, M0, *, ext='zeros'):
         '''Initialize an IMF with the N0 required to have a total mass of M0.'''
 
-        imf = cls(m_break=m_break, a=a, N0=1, ext='zeros')
+        imf = cls(m_break=m_break, a=a, N0=1, ext=ext)
 
         N0 = M0 / imf.mmean
         imf.N0 = N0
@@ -225,7 +225,7 @@ class PowerLawIMF:
         '''Return the total mass of stars at a given mass for this IMF, M(m)'''
         return m * self(m, N=N)
 
-    def binned_eval(self, bins, *, N=None):
+    def binned_eval(self, bins: mbin, *, N=None):
         '''Evaluate this imf within a given set of mass bins.
 
         Computes the mass and numbers of stars dictated by this IMF within a
@@ -294,19 +294,21 @@ class PowerLawIMF:
 
         return A * Pk(alpha, 1, *bins), A * Pk(alpha, 2, *bins), alpha
 
-    def binned_N(self, bins, *, N=None):
+    def binned_N(self, bins: mbin, *, N=None):
         '''Return the total number of stars within given mass bins.'''
         return self.binned_eval(bins=bins, N=N)[0]
 
-    def binned_M(self, bins, *, N=None):
+    def binned_M(self, bins: mbin, *, N=None):
         '''Return the total mass of stars within given mass bins.'''
         return self.binned_eval(bins=bins, N=N)[1]
 
     def integrate_N(self, ml, mu):
+        '''Integrate the IMF (number) between the bounds `ml` and `mu`.'''
         from scipy.integrate import quad
         return quad(self.N, ml, mu)[0]
 
     def integrate_M(self, ml, mu):
+        '''Integrate the IMF (mass) between the bounds `ml` and `mu`.'''
         from scipy.integrate import quad
         return quad(self.M, ml, mu)[0]
 
@@ -508,6 +510,7 @@ class MassBins:
                         f"upper bound ({BH_bu})")
                 raise ValueError(mssg)
 
+            # TODO bug when BH_bl is 0 and log bins
             bin_sides = binfunc(BH_bl, BH_bu, nbin_BH + 1)
             bins_BH = mbin(bin_sides[:-1], bin_sides[1:])
 

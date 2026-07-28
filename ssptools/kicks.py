@@ -15,6 +15,7 @@ __all__ = ["kick_retention_fraction", "KickStats", "maxwellian_kick_v"]
 
 @dataclasses.dataclass(eq=False, frozen=True)
 class KickStats:
+    '''Container of statistics surrounding the impacts of BH natal kicks.'''
     retention: np.ndarray
     mass_kicked: np.ndarray
     num_kicked: np.ndarray
@@ -124,7 +125,8 @@ def _maxwellian_retention_frac(m, vesc, FeH, vdisp=265., *, SNe_method='rapid'):
         The dispersion of the Maxwellian kick velocity distribution. Defaults
         to 265 km/s, as typically used for neutron stars.
 
-    SNe_method : {'rapid', 'delayed', 'NS', 'none'}, optional
+    SNe_method : {'rapid', 'delayed', 'sevn-rapid', 'sevn-delayed',
+                  'NS', 'none'}, optional
         Which method to use to determine the fallback fraction as a function of
         the initial mass, which scales the dispersion as σ(1-fb).
         Available methods include the "rapid" (default) or "delayed" supernovae
@@ -340,6 +342,7 @@ def kick_retention_fraction(m_ini, method='fryer2012', **ret_kwargs):
 
 
 def _determine_kick_params(method, f_target, IMF, IFMR, slope, scale=10.):
+    '''Compute a scale mass which will reach `f_target` under this `method`.'''
     import scipy.optimize as opt
 
     f_ret = _get_kick_method(method)
@@ -384,7 +387,7 @@ def _determine_kick_params(method, f_target, IMF, IFMR, slope, scale=10.):
 
 
 def _get_kick_method(method):
-    '''parse method to get the kick ret function (func to avoid repetition)'''
+    '''Parse method to get the kick ret function.'''
 
     match method.casefold():
 

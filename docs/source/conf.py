@@ -43,7 +43,7 @@ autosummary_generate = True
 
 autodoc_inherit_docstrings = False # flase
 
-numpydoc_show_class_members = True # false
+numpydoc_show_class_members = False
 numpydoc_show_inherited_class_members = True # false
 # numpydoc_class_members_toctree = True
 # numpydoc_validation_checks = {"all", "GL01", "EX01", "SA01"}

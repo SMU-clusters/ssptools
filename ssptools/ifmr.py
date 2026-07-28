@@ -572,12 +572,14 @@ class IFMR:
     BH_method : {"banerjee20", "banerjee20-delayed",
                  "banerjee20-ppsn", "banerjee20-delayed-ppsn"
                  "cosmic", "cosmic-rapid", "cosmic-delayed",
+                 "sevn-rapid", "sevn-delayed",
                  "linear", "powerlaw", "brokenpowerlaw"}, optional
         The Black Hole IFMR algorithm to use. Defaults to the updated-SSE
         version decsribed by Banerjee et al. (2020) (using the rapid supernovae
         schema presented by Fryer+2012). Other options include the COSMIC
-        library (Breivik et al. 2020) and various simple analytical
-        prescriptions.
+        library (Breivik et al. 2020), the SEVN library (Iorio et al. 2023,
+        using PARSEC tracks) and various simple analytical prescriptions.
+        See `data/ifmr/README.md` for details on each method.
 
     BH_kwargs : dict, optional
         All arguments passed to the BH IFMR algorithm. See the specified
@@ -688,6 +690,10 @@ class IFMR:
             case 'sevn-delayed':
                 BH_kwargs.setdefault('FeH', FeH)
                 BH_func, BH_mi, BH_mf, = _SEVN_d_BH_predictor(**BH_kwargs)
+
+            case 'sevn-mist' | 'sevn-rapid-mist':
+                BH_kwargs.setdefault('FeH', FeH)
+                BH_func, BH_mi, BH_mf, = _SEVN_r_mist_predictor(**BH_kwargs)
 
             case 'linear' | 'line':
                 BH_func, BH_mi, BH_mf, = _linear_BH_predictor(**BH_kwargs)
