@@ -19,7 +19,9 @@ from ssptools import __version__
 # -- Project information -----------------------------------------------------
 
 project = 'SSPTools'
-author = "Nolan Dickson; Peter Smith; Eduardo Balbinot; Mark Gieles; Miklos Peuten; Daniel Marin Pina"
+# author = "Nolan Dickson; Peter Smith; Eduardo Balbinot; Mark Gieles; Miklos Peuten; Daniel Marin Pina"
+author = "Nolan Dickson"
+# author = ''
 
 version = release = __version__
 
@@ -31,6 +33,7 @@ version = release = __version__
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
+    "sphinx.ext.viewcode",
     'sphinx.ext.autosectionlabel',
     'sphinx_toggleprompt',
     'numpydoc'
@@ -53,7 +56,6 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
 
-
 # maximum_signature_line_length = 80
 
 
@@ -61,25 +63,31 @@ exclude_patterns = []
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
-# html_theme = "pydata_sphinx_theme"
-html_theme = "sphinx_book_theme"
+html_theme = "pydata_sphinx_theme"
+# html_theme = "sphinx_book_theme"
 
-# html_theme_options = {
-#     "use_edit_page_button": True,
-#     "icon_links": [{
-#         "name": "GitHub",
-#         "url": "https://github.com/SMU-clusters/ssptools",
-#         "icon": "fab fa-github-square",
-#         "type": "fontawesome",  # Default is fontawesome
-#     }]
-# }
 html_theme_options = {
-    "repository_url": "https://github.com/SMU-clusters/ssptools",
-    "use_repository_button": True,
+    "use_edit_page_button": True,
+    "icon_links": [{
+        "name": "GitHub",
+        "url": "https://github.com/SMU-clusters/ssptools",
+        "icon": "fab fa-github-square",
+        "type": "fontawesome",  # Default is fontawesome
+    }],
+    "collapse_navigation": True
+}
+# html_theme_options = {
+#     "repository_url": "https://github.com/SMU-clusters/ssptools",
+#     "use_repository_button": True,
+# }
+html_sidebars = {
+  "installation": [],
+  "algorithms": [],
+  "usage": [],
+  "citations": []
 }
 
 html_context = {
-    # "github_url": "https://github.com", # or your GitHub Enterprise interprise
     "github_user": "SMU-clusters",
     "github_repo": "ssptools",
     "github_version": "master",

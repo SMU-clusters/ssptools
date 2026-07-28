@@ -283,11 +283,11 @@ if it is defined as :math:`\dot{M}_{esc}`.
 And finally, the mass and number derivatives are given by:
 
 .. math::
-    \begin{align*}
+    \begin{aligned}
         \dot{N}_{s,j} &= B\ I_{s,j} \\
         \dot{N}_{r,j} &= B\ I_{r,j} \\
-        \dot{M}_{r,j} &= B\ J_{r,j} \\
-    \end{align*}
+        \dot{M}_{r,j} &= B\ J_{r,j}
+    \end{aligned}
 
 and the mass function slopes in each bin (defined by the bounds
 :math:`m_{j1},\ m_{j2}`) are given by:

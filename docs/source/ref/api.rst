@@ -61,3 +61,12 @@ Mass Helpers
 
    ssptools.masses.PowerLawIMF
    ssptools.masses.MassBins
+
+
+Package Layout
+--------------
+
+.. figure:: ../_static/ssptools_diagram.png
+  :width: 700
+  :align: center
+  :alt: High-level package organization

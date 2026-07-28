@@ -1,0 +1,133 @@
+
+specification {
+  element class {
+    style {
+      color green
+    }
+  }
+  element function {
+    style {
+      color amber
+    }
+  }
+  element module
+  element dataset {
+    style {
+      shape storage
+    }
+  }
+
+  relationship subclasses
+  relationship calls
+  relationship uses
+
+}
+
+model {
+
+  module evolve_mf {
+
+    class EvolvedMF {
+      description 'Evolved Mass Function'
+
+      .calls kick_retention_fraction
+      .calls IFMR
+      .calls PowerLawIMF
+
+    }
+
+    class EvolvedMFWithBH {
+      description 'Evolved Mass Function based on BH'
+      .subclasses EvolvedMF
+
+      .calls kick_retention_fraction
+      .calls IFMR
+      .calls PowerLawIMF
+
+    }
+
+    class InitialBHPopulation {
+      description 'Initial BH Mass Function'
+
+      .calls kick_retention_fraction
+      .calls IFMR
+      .calls PowerLawIMF
+
+    }
+
+  }
+
+  module kicks {
+
+    function kick_retention_fraction {
+      description 'Compute BH retention fraction'
+      .uses data
+    }
+
+    function maxwellian_kick_v {
+      description 'Compute individual BH kick velocities'
+
+      .uses data
+    }
+
+  }
+
+  module ifmr {
+
+    class IFMR {
+      description 'Initial final mass relations'
+
+      .uses data
+    }
+
+  }
+
+  module masses {
+
+    class PowerLawIMF {
+      description 'Initial stellar mass function'
+    }
+
+  }
+
+  module data {
+
+    description 'Pre-computed stellar evolution grids'
+
+    style {
+      shape storage
+    }
+
+    dataset SSE {
+      description 'SSE grid'
+    }
+    dataset SEVN {
+      description 'SSE grid'
+    }
+    dataset COSMIC {
+      description 'COSMIC grid'
+    }
+
+  }
+
+}
+
+views {
+
+  view index {
+    title 'Top-level View'
+    description 'High level view of the relationships related to the Mass Function classes'
+
+    include evolve_mf.*
+    include kicks.kick_retention_fraction
+    include ifmr.*
+    include masses.*
+    include data
+
+  }
+
+  view of data {
+    include *
+  }
+
+}

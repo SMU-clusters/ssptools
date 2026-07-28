@@ -23,7 +23,8 @@ for dealing with SSPs.
 Quickstart
 -----------
 
-An evolved mass function can be computed using the `EvolvedMF` class:
+An evolved mass function can be computed using the :class:`ssptools.EvolvedMF`
+class:
 
 .. code-block:: python
 
@@ -43,10 +44,9 @@ Alternatively, an IMF class can be instantiated and used directly:
 
    >>> pdmf = ssptools.EvolvedMF(imf, nbins, FeH=-1.5, tout=[0, 1000, 13000], esc_rate=0)
 
-There are also a number of alternative classes for task such as rapidly
-computing only the initially formed BHs.
+There are also a number of alternative classes for tasks such as rapidly
+computing only the initially formed BHs (:class:`ssptools.InitialBHPopulation`).
 See the documentation of each class for more details on all possible parameters.
-.. TODO insert :class: links
 
 The final element of `tout` (in Myr) defines the age to which the mass function
 is evolved to, where the masses and numbers of stars and remnants (together)
@@ -126,9 +126,9 @@ generally have shape (`len(tout)`, `sum(nbins)`).
    >>> plt.legend()
    >>> plt.show()
 
-![evolve_mf_example1](docs/source/_static/evolve_mf_example1.png)
+.. ![evolve_mf_example1](docs/source/_static/evolve_mf_example1.png)
 
-.. image:: _static/evolve_mf_example1.png
+.. figure:: _static/evolve_mf_example1.png
   :width: 800
   :align: center
   :alt: Example of evolved mass function at different ages.
@@ -148,8 +148,8 @@ Contents
 
 
 .. TODO what do these do?
-Indices and tables
-==================
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. Indices and tables
+.. ==================
+.. * :ref:`genindex`
+.. * :ref:`modindex`
+.. * :ref:`search`

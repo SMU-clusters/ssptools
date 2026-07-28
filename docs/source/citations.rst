@@ -7,7 +7,7 @@ This library is a fork based on the original algorithms of
 
 The package was then updated and described in
 `Dickson et al. (2023)`_, `Dickson et al. (2024)`_ (version <1.0.0),
-and Dickson et al. (in prep) (version >3.0.0).
+and `Dickson et al. (2026)`_ (version >3.0.0).
 
 
 The stellar evolution lifetimes are interpolated from the
@@ -27,7 +27,7 @@ relevant papers.
 
 .. _Dickson et al. (2023): https://ui.adsabs.harvard.edu/abs/2023MNRAS.522.5320D
 .. _Dickson et al. (2024): https://ui.adsabs.harvard.edu/abs/2024MNRAS.529..331D
-
+.. _Dickson et al. (2026): https://ui.adsabs.harvard.edu/abs/2026arXiv260707010D
 .. _Dotter et al. 2007: https://ui.adsabs.harvard.edu/abs/2007AJ....134..376D
 .. _2008: https://ui.adsabs.harvard.edu/abs/2008ApJS..178...89D
 .. _Choi et al. 2016: https://ui.adsabs.harvard.edu/abs/2016ApJ...823..102C
@@ -35,4 +35,4 @@ relevant papers.
 .. _Banerjee et al. 2020: https://ui.adsabs.harvard.edu/abs/2020A&A...639A..41B
 .. _Fryer et al. (2012): https://ui.adsabs.harvard.edu/abs/2012ApJ...749...91F
 .. _Breivik et al. 2020: https://ui.adsabs.harvard.edu/abs/2020ApJ...898...71B
-.. _Iorio et al. 2022: https://ui.adsabs.harvard.edu/abs/2023MNRAS.524..426I/abstract
+.. _Iorio et al. 2022: https://ui.adsabs.harvard.edu/abs/2023MNRAS.524..426I
